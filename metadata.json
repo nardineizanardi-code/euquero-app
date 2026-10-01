@@ -1,0 +1,6 @@
+{
+  "name": "EloMatch - Quero Comprar e Quero Vender",
+  "description": "Plataforma inteligente que conecta quem quer comprar com quem quer vender máquinas pesadas, veículos e imóveis com match automático.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
