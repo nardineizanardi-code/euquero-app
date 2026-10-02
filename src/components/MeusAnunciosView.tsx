@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Tag, PlusCircle, Trash2, ExternalLink, 
-  Search, ShieldCheck, CheckCircle2, AlertCircle, Eye, Sparkles
+  Search, ShieldCheck, CheckCircle2, AlertCircle, Eye, Sparkles, Edit
 } from 'lucide-react';
 import { ListingItem } from '../types';
 import { CardImageWithFallback } from './CardImageWithFallback';
@@ -11,6 +11,8 @@ interface MeusAnunciosViewProps {
   onBack: () => void;
   onOpenWizard: (intent: 'buy' | 'sell') => void;
   onViewProductDetail: (item: ListingItem) => void;
+  onEditListing?: (item: ListingItem) => void;
+  onDeleteListing?: (item: ListingItem) => void;
   allListings: ListingItem[];
 }
 
@@ -18,6 +20,8 @@ export const MeusAnunciosView: React.FC<MeusAnunciosViewProps> = ({
   onBack,
   onOpenWizard,
   onViewProductDetail,
+  onEditListing,
+  onDeleteListing,
   allListings,
 }) => {
   // Pega CPF salvo no localStorage (ex: vendedor_dados, euquero_user_cpf, etc) ou estado local
@@ -37,6 +41,7 @@ export const MeusAnunciosView: React.FC<MeusAnunciosViewProps> = ({
   const [activeFilterCpf, setActiveFilterCpf] = useState<string>(cpfInput);
   const [userListings, setUserListings] = useState<ListingItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [listingToDelete, setListingToDelete] = useState<ListingItem | null>(null);
 
   // Simula busca no banco/Supabase por CPF
   // supabase.from('produtos').select('*').eq('cpf', cleanCpf)
@@ -269,24 +274,89 @@ export const MeusAnunciosView: React.FC<MeusAnunciosViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Barra de Ações do Anúncio */}
-                  <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-slate-400 font-mono">
+                  {/* Barra de Ações do Anúncio: 3 BOTÕES LADO A LADO */}
+                  <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-[11px] text-slate-400 font-mono font-bold">
                       ID: {listing.id.slice(-8)}
                     </span>
 
-                    <button
-                      type="button"
-                      onClick={() => onViewProductDetail(listing)}
-                      className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-transform active:scale-95"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-orange-400" />
-                      <span>Ver Anúncio</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {/* Botão 1: Ver Anúncio (preto) */}
+                      <button
+                        type="button"
+                        onClick={() => onViewProductDetail(listing)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-transform active:scale-95"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-orange-400" />
+                        <span>Ver Anúncio</span>
+                      </button>
+
+                      {/* Botão 2: Editar (laranja) */}
+                      <button
+                        type="button"
+                        onClick={() => onEditListing ? onEditListing(listing) : window.location.assign(`/editar-anuncio?id=${listing.id}`)}
+                        className="px-3 py-1.5 rounded-xl bg-[#FF6B00] hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-2xs transition-transform active:scale-95"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        <span>Editar</span>
+                      </button>
+
+                      {/* Botão 3: Excluir (vermelho com lixeira) */}
+                      <button
+                        type="button"
+                        onClick={() => setListingToDelete(listing)}
+                        className="px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer shadow-2xs transition-transform active:scale-95"
+                        title="Excluir Anúncio"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Excluir</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {listingToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-7 h-7 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Tem certeza?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Essa ação não pode ser desfeita. O anúncio "{listingToDelete.title}" (ID: {listingToDelete.id.slice(-8)}) será removido permanentemente.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setListingToDelete(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteListing) {
+                    onDeleteListing(listingToDelete);
+                  }
+                  setUserListings((prev) => prev.filter((it) => it.id !== listingToDelete.id));
+                  setListingToDelete(null);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                Sim, Excluir Anúncio
+              </button>
+            </div>
           </div>
         </div>
       )}

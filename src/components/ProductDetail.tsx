@@ -3,7 +3,8 @@ import {
   X, Phone, MessageSquare, MapPin, Calendar, Clock, 
   ShieldCheck, Share2, Heart, Sparkles, CheckCircle, ArrowRight,
   Crown, Video, ExternalLink, Compass, CheckCircle2, Copy,
-  ChevronLeft, ChevronRight, Smartphone, AlertCircle, Camera, RefreshCw
+  ChevronLeft, ChevronRight, Smartphone, AlertCircle, Camera, RefreshCw,
+  Edit, Trash2, PauseCircle, PlayCircle
 } from 'lucide-react';
 import { ListingItem } from '../types';
 import { ProductGallery } from './ProductGallery';
@@ -11,6 +12,7 @@ import { MachineVideoPlayer } from './MachineVideoPlayer';
 import { generateDisplayProductLink, getShareableProductUrl, mascararTelefone } from '../utils/productLinks';
 import { formatVendendoEm } from '../utils/geoDistance';
 import { updateProductMetaTags } from '../utils/openGraphMeta';
+import { isProductOwner } from '../utils/ownerAuth';
 
 export interface ProductDetailProps {
   item: ListingItem;
@@ -18,6 +20,9 @@ export interface ProductDetailProps {
   onOpenChat?: (item: ListingItem) => void;
   isVideoUnlocked?: boolean;
   onUnlockVideo?: (item: ListingItem) => void;
+  onEdit?: (item: ListingItem) => void;
+  onDelete?: (item: ListingItem) => void;
+  onTogglePause?: (item: ListingItem) => void;
 }
 
 export const ProductDetail: React.FC<ProductDetailProps> = ({
@@ -26,9 +31,16 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   onOpenChat,
   isVideoUnlocked = false,
   onUnlockVideo,
+  onEdit,
+  onDelete,
+  onTogglePause,
 }) => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isItemPaused, setIsItemPaused] = useState(!!item.isPaused);
+
+  const isOwner = useMemo(() => isProductOwner(item), [item]);
 
   // Garante as 4 fotos oficiais da Escavadeira CAT 320D se nenhuma foto for encontrada
   const defaultMachineryPhotos = useMemo(() => [
@@ -140,9 +152,102 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
         </div>
       </div>
 
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-7 h-7 stroke-[2.5]" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900">
+                Tem certeza?
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Essa ação não pode ser desfeita. O anúncio será excluído permanentemente da plataforma.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  onDelete?.(item);
+                  if (onClose) onClose();
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-black text-xs cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                Sim, Excluir Anúncio
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* BODY COM SCROLL COMPLETO */}
       <div className="p-4 sm:p-6 space-y-5 overflow-y-auto max-h-[85vh]">
         
+        {/* BARRA AMARELA: VOCÊ É O DONO DESTE ANÚNCIO (PROMPT 2) */}
+        {isOwner && (
+          <div className="bg-amber-100 border-2 border-amber-300 text-amber-950 p-3 sm:p-3.5 rounded-2xl flex flex-wrap items-center justify-between gap-2 shadow-xs">
+            <div className="flex items-center gap-2 font-black text-xs sm:text-sm">
+              <span className="text-base">👑</span>
+              <span>Você é o dono deste anúncio</span>
+              {isItemPaused && (
+                <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full border border-amber-400">
+                  Pausado
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* [Editar] */}
+              <button
+                type="button"
+                onClick={() => onEdit ? onEdit(item) : window.location.assign(`/editar-anuncio?id=${item.id}`)}
+                className="px-3 py-1.5 rounded-xl bg-[#FF6B00] hover:bg-orange-600 text-white font-black text-xs flex items-center gap-1 shadow-xs cursor-pointer transition-transform active:scale-95"
+              >
+                <Edit className="w-3.5 h-3.5" />
+                <span>Editar</span>
+              </button>
+
+              {/* [Pausar] */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextPaused = !isItemPaused;
+                  setIsItemPaused(nextPaused);
+                  onTogglePause?.({ ...item, isPaused: nextPaused });
+                  setCopyFeedback(nextPaused ? 'Anúncio pausado' : 'Anúncio reativado');
+                  setTimeout(() => setCopyFeedback(''), 2500);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <PauseCircle className="w-3.5 h-3.5" />
+                <span>{isItemPaused ? 'Reativar' : 'Pausar'}</span>
+              </button>
+
+              {/* [Excluir] */}
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer shadow-xs transition-transform active:scale-95"
+                title="Excluir este anúncio"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 1. GALERIA DE FOTOS OBRIGATÓRIA NO TOPO (RENDERIZADA ANTES DO PREÇO) */}
         {/* INDEPENDENTE DE TER VÍDEO OU NÃO: FOTOS GRÁTIS APARECEM SEMPRE */}
         <section aria-label="Galeria de Fotos da Máquina">

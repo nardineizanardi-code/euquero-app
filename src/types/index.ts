@@ -102,6 +102,8 @@ export interface ListingItem {
   expiresAt?: string;
   hasVerifiedVideo?: boolean;
   geoPreference?: GeoPreferenceType;
+  ownerId?: string;
+  isPaused?: boolean;
 }
 
 export type PhotoPlanTier = 

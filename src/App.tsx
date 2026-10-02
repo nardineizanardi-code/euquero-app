@@ -14,6 +14,7 @@ import { PretendentesTinderPanel, PretendenteLead } from './components/Pretenden
 import { VideoUnlockModal } from './components/VideoUnlockModal';
 import { AntiBloqueioWhatsAppModal } from './components/AntiBloqueioWhatsAppModal';
 import { MeusAnunciosView } from './components/MeusAnunciosView';
+import { EditListingView } from './components/EditListingView';
 import { ActiveBuyersStats, calculateTotalShownBuyers } from './components/ActiveBuyersBanner';
 import { 
   FeedAdMobBanner, 
@@ -297,14 +298,32 @@ const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
 ];
 
 export default function App() {
-  // Navigation: 'home' (Feed principal), 'chat' (Negociações diretas) ou 'meus_anuncios' (/meus-anuncios)
-  const [currentView, setCurrentView] = useState<'home' | 'chat' | 'meus_anuncios'>(() => {
+  // Navigation: 'home' (Feed principal), 'chat' (Negociações diretas), 'meus_anuncios' (/meus-anuncios ou /painel-vendedor) ou 'editar_anuncio' (/editar-anuncio)
+  const [currentView, setCurrentView] = useState<'home' | 'chat' | 'meus_anuncios' | 'editar_anuncio'>(() => {
     if (typeof window !== 'undefined' && window.location) {
-      if (window.location.pathname === '/meus-anuncios' || window.location.search.includes('meus-anuncios')) {
+      const path = window.location.pathname;
+      const search = window.location.search;
+      if (
+        path === '/meus-anuncios' || 
+        path === '/painel-vendedor' || 
+        search.includes('meus-anuncios') || 
+        search.includes('painel-vendedor')
+      ) {
         return 'meus_anuncios';
+      }
+      if (path === '/editar-anuncio' || search.includes('editar-anuncio')) {
+        return 'editar_anuncio';
       }
     }
     return 'home';
+  });
+
+  const [editingListingId, setEditingListingId] = useState<string>(() => {
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('id') || '';
+    }
+    return '';
   });
 
   // Search & Category Filters - Default para 'linha_amarela' conforme especificação
@@ -568,16 +587,26 @@ export default function App() {
     }
   }, [messages]);
 
-  // Deep linking para ?produto=ID, ?convite=NOME e /meus-anuncios
+  // Deep linking para ?produto=ID, ?convite=NOME, /meus-anuncios, /painel-vendedor e /editar-anuncio
   useEffect(() => {
     try {
-      if (window.location.pathname === '/meus-anuncios') {
+      const initialPath = window.location.pathname;
+      if (initialPath === '/meus-anuncios' || initialPath === '/painel-vendedor') {
         setCurrentView('meus_anuncios');
+      } else if (initialPath === '/editar-anuncio') {
+        const params = new URLSearchParams(window.location.search);
+        setEditingListingId(params.get('id') || '');
+        setCurrentView('editar_anuncio');
       }
 
       const handlePopState = () => {
-        if (window.location.pathname === '/meus-anuncios') {
+        const path = window.location.pathname;
+        if (path === '/meus-anuncios' || path === '/painel-vendedor') {
           setCurrentView('meus_anuncios');
+        } else if (path === '/editar-anuncio') {
+          const params = new URLSearchParams(window.location.search);
+          setEditingListingId(params.get('id') || '');
+          setCurrentView('editar_anuncio');
         } else {
           setCurrentView('home');
         }
@@ -702,6 +731,85 @@ export default function App() {
       window.history.pushState({}, '', '/meus-anuncios');
     } catch (e) {}
     setCurrentView('meus_anuncios');
+  };
+
+  const navigateToEditListing = (item: ListingItem) => {
+    try {
+      window.history.pushState({}, '', `/editar-anuncio?id=${item.id}`);
+    } catch (e) {}
+    setEditingListingId(item.id);
+    setSelectedItemForDetail(null);
+    setCurrentView('editar_anuncio');
+  };
+
+  const handleDeleteListing = (itemOrId: ListingItem | string) => {
+    const id = typeof itemOrId === 'string' ? itemOrId : itemOrId.id;
+    setListings((prev) => {
+      const filtered = prev.filter((it) => it.id !== id && it.id.slice(-8) !== id.slice(-8));
+      try {
+        localStorage.setItem('euquero_listings_v8', JSON.stringify(filtered));
+      } catch (e) {}
+      return filtered;
+    });
+
+    try {
+      const bancoStr = localStorage.getItem('euquero_banco_vendedores');
+      if (bancoStr) {
+        const list = JSON.parse(bancoStr);
+        const filteredBanco = list.filter((v: any) => v.id !== id && (v.id ? v.id.slice(-8) !== id.slice(-8) : true));
+        localStorage.setItem('euquero_banco_vendedores', JSON.stringify(filteredBanco));
+      }
+    } catch (e) {}
+
+    if (selectedItemForDetail?.id === id || (selectedItemForDetail && selectedItemForDetail.id.slice(-8) === id.slice(-8))) {
+      setSelectedItemForDetail(null);
+    }
+
+    setActivePushAlert({
+      id: `alert-delete-${Date.now()}`,
+      title: '🗑️ Anúncio Excluído',
+      body: 'O anúncio foi removido permanentemente da sua conta e do feed.',
+      targetItem: listings[0],
+      timestamp: 'Agora'
+    });
+
+    if (currentView === 'editar_anuncio') {
+      navigateToMeusAnuncios();
+    }
+  };
+
+  const handleSaveEditedListing = (updatedItem: ListingItem) => {
+    setListings((prev) => {
+      const updated = prev.map((it) => (it.id === updatedItem.id || it.id.slice(-8) === updatedItem.id.slice(-8)) ? updatedItem : it);
+      if (!updated.some((it) => it.id === updatedItem.id || it.id.slice(-8) === updatedItem.id.slice(-8))) {
+        updated.unshift(updatedItem);
+      }
+      try {
+        localStorage.setItem('euquero_listings_v8', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    try {
+      const bancoStr = localStorage.getItem('euquero_banco_vendedores');
+      if (bancoStr) {
+        const list = JSON.parse(bancoStr);
+        const updatedBanco = list.map((v: any) => (v.id === updatedItem.id || (v.id && v.id.slice(-8) === updatedItem.id.slice(-8))) ? { ...v, ...updatedItem } : v);
+        localStorage.setItem('euquero_banco_vendedores', JSON.stringify(updatedBanco));
+      }
+    } catch (e) {}
+
+    setActivePushAlert({
+      id: `alert-save-${Date.now()}`,
+      title: '✅ Anúncio Atualizado',
+      body: `"${updatedItem.title}" foi salvo com sucesso.`,
+      targetItem: updatedItem,
+      timestamp: 'Agora'
+    });
+  };
+
+  const handleTogglePauseListing = (item: ListingItem) => {
+    handleSaveEditedListing(item);
   };
 
   const navigateToHome = () => {
@@ -1507,13 +1615,30 @@ export default function App() {
             )}
           </section>
         </main>
+      ) : currentView === 'editar_anuncio' ? (
+        /* TELA /editar-anuncio */
+        <main className="flex-1 w-full pb-16">
+          <EditListingView
+            listingId={editingListingId}
+            allListings={listings}
+            onSave={handleSaveEditedListing}
+            onDelete={handleDeleteListing}
+            onBack={navigateToMeusAnuncios}
+            onViewProduct={(it) => {
+              setSelectedItemForDetail(it);
+              navigateToHome();
+            }}
+          />
+        </main>
       ) : currentView === 'meus_anuncios' ? (
-        /* TELA /meus-anuncios (PROMPT 5) */
+        /* TELA /meus-anuncios ou /painel-vendedor */
         <main className="flex-1 w-full pb-16">
           <MeusAnunciosView
             onBack={navigateToHome}
             onOpenWizard={handleOpenWizard}
             onViewProductDetail={(item) => setSelectedItemForDetail(sanitizePublicProduct(item))}
+            onEditListing={(item) => navigateToEditListing(item)}
+            onDeleteListing={(item) => handleDeleteListing(item)}
             allListings={listings}
           />
         </main>
@@ -1547,6 +1672,9 @@ export default function App() {
         onOpenChat={(it) => handleStartChatForItem(it)}
         isVideoUnlocked={selectedItemForDetail ? !!unlockedVideos[selectedItemForDetail.id] : false}
         onUnlockVideo={(it) => setVideoToUnlockModal(it)}
+        onEdit={(it) => navigateToEditListing(it)}
+        onDelete={(it) => handleDeleteListing(it)}
+        onTogglePause={(it) => handleTogglePauseListing(it)}
       />
 
       {/* MODAL DE DESBLOQUEIO DE VÍDEO (R$ 19,90) */}

@@ -8,6 +8,9 @@ interface ItemDetailModalProps {
   onOpenChat: (item: ListingItem) => void;
   isVideoUnlocked?: boolean;
   onUnlockVideo?: (item: ListingItem) => void;
+  onEdit?: (item: ListingItem) => void;
+  onDelete?: (item: ListingItem) => void;
+  onTogglePause?: (item: ListingItem) => void;
 }
 
 export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
@@ -16,6 +19,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   onOpenChat,
   isVideoUnlocked = false,
   onUnlockVideo,
+  onEdit,
+  onDelete,
+  onTogglePause,
 }) => {
   if (!item) return null;
 
@@ -28,6 +34,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
           onOpenChat={onOpenChat}
           isVideoUnlocked={isVideoUnlocked}
           onUnlockVideo={onUnlockVideo}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onTogglePause={onTogglePause}
         />
       </div>
     </div>
