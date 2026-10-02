@@ -269,6 +269,8 @@ export const PretendentesTinderPanel: React.FC<PretendentesTinderPanelProps> = (
                       <img
                         src={lead.avatarUrl}
                         alt="Comprador"
+                        loading="lazy"
+                        decoding="async"
                         className={`w-full h-full object-cover transition-all duration-500 ${
                           lead.isUnlocked
                             ? 'filter-none scale-100'

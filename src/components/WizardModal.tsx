@@ -3,7 +3,7 @@ import {
   X, Check, ShieldCheck, Video, Copy, QrCode, CreditCard, 
   Sparkles, CheckCircle2, ArrowRight, MessageSquare, ExternalLink,
   Lock, Unlock, ArrowLeft, Camera, Plus, AlertCircle, Play,
-  Tractor, Truck, Container, Construction, Upload
+  Tractor, Truck, Container, Construction, Upload, Trash2
 } from 'lucide-react';
 import { IntentType, ListingItem, MatchResult } from '../types';
 import { generateDisplayProductLink, getShareableProductUrl, slugify } from '../utils/productLinks';
@@ -83,37 +83,55 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [sellerVideoUrl, setSellerVideoUrl] = useState<string>('');
   const [sellerIsPlayingVideo, setSellerIsPlayingVideo] = useState<boolean>(false);
   const [videoDuplicateError, setVideoDuplicateError] = useState<string>('');
-  // Função de compressão 800px WebP para não pesar o sistema
+  // Função de compressão 800px WebP para não quebrar links nem travar o sistema
   const compressImageToWebP = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-          const maxDim = 800;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            const maxDim = 800;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
             }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/webp', 0.85));
-          } else {
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              // Fundo branco para preservar transparência de forma elegante
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, width, height);
+              ctx.drawImage(img, 0, 0, width, height);
+              
+              let dataUrl = canvas.toDataURL('image/webp', 0.82);
+              if (!dataUrl || !dataUrl.startsWith('data:image/webp')) {
+                dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              }
+              resolve(dataUrl);
+            } else {
+              resolve(e.target?.result as string);
+            }
+          } catch (err) {
             resolve(e.target?.result as string);
           }
         };
+        img.onerror = () => {
+          resolve(e.target?.result as string);
+        };
         img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        resolve('');
       };
       reader.readAsDataURL(file);
     });
@@ -140,11 +158,12 @@ export const WizardModal: React.FC<WizardModalProps> = ({
     return getCpfProductsCount('123.456.789-00');
   });
 
-  // Fotos do Vendedor (Grátis até 4 fotos, Verificado até 12 fotos)
+  // Fotos do Vendedor (Fotos reais com fallback público garantido)
   const [sellerPhotos, setSellerPhotos] = useState<string[]>([
     '/cat_320d_excavator.jpg',
-    'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f7?w=800&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80',
   ]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [showPhotoLimitModal, setShowPhotoLimitModal] = useState<boolean>(false);
@@ -551,14 +570,22 @@ export const WizardModal: React.FC<WizardModalProps> = ({
         localStorage.setItem('video_pago_cat320d', 'true');
       }
 
-      // Salva no banco "vendedores" oficial
+      // Salva no banco "vendedores" oficial com fotos completas
       const bancoVend = localStorage.getItem('euquero_banco_vendedores');
       const listVend = bancoVend ? JSON.parse(bancoVend) : [];
-      listVend.push({ ...vendedorObj, id: uniqueId, displayLink, shareableUrl });
+      listVend.push({ 
+        ...vendedorObj, 
+        id: uniqueId, 
+        displayLink, 
+        shareableUrl,
+        fotos: sellerPhotos,
+        images: sellerPhotos 
+      });
       localStorage.setItem('euquero_banco_vendedores', JSON.stringify(listVend));
     } catch (err) {}
 
     onSubmitListing({
+      id: uniqueId,
       intent: 'sell',
       title: `Vendo ${details.machineLabel} (${sellerCity})`,
       category: selectedCategory || 'linha_amarela',
@@ -584,7 +611,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
       expiresAt: '26/10/2026',
       geoPreference: sellerGeoPref,
       images: sellerPhotos
-    });
+    } as any);
   };
 
   // =========================================================================
@@ -1904,39 +1931,42 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                       className="hidden"
                     />
 
-                    <div className="flex flex-wrap gap-2 pt-1 items-center">
+                    <div className="flex flex-wrap gap-2.5 pt-1 items-center">
                       {sellerPhotos.map((p, idx) => (
-                        <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-300 shadow-xs">
-                          <img src={p} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                        <div key={idx} className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 border-slate-300 shadow-sm group">
+                          <img src={p} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                          
+                          {/* Selo com número da foto */}
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-slate-900/80 text-white">
+                            Foto {idx + 1}
+                          </span>
+
+                          {/* Botão de Excluir: Vermelho redondo com ícone de lixeira bem visível */}
                           <button
                             type="button"
-                            onClick={() => setSellerPhotos((prev) => prev.filter((_, i) => i !== idx))}
-                            className="absolute top-1 right-1 w-4 h-4 rounded-full bg-slate-900/80 text-white flex items-center justify-center text-[10px] cursor-pointer hover:bg-red-600"
-                            title="Remover foto"
+                            onClick={() => {
+                              if (window.confirm("Deseja excluir esta mídia?")) {
+                                setSellerPhotos((prev) => prev.filter((_, i) => i !== idx));
+                              }
+                            }}
+                            className="absolute top-1.5 right-1.5 w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-red-600 hover:bg-red-700 active:scale-90 text-white shadow-md flex items-center justify-center cursor-pointer transition-all border border-white/50"
+                            title="Excluir foto"
                           >
-                            ×
+                            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
                           </button>
                         </div>
                       ))}
 
+                      {/* Botão ÚNICO de Upload WebP (Removido o botão + Exemplo) */}
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-16 px-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-orange-500 hover:bg-orange-50 flex flex-col items-center justify-center text-slate-500 hover:text-orange-600 transition-colors cursor-pointer text-center"
+                        className="h-20 sm:h-24 px-4 rounded-2xl border-2 border-dashed border-orange-400 bg-orange-50/50 hover:border-orange-500 hover:bg-orange-100/60 flex flex-col items-center justify-center text-orange-700 transition-all cursor-pointer text-center shadow-xs active:scale-95"
                         title="Upload de foto com compressão WebP 800px"
                       >
-                        <Upload className="w-4 h-4 text-orange-500" />
-                        <span className="text-[10px] font-black mt-0.5">Upload WebP</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleAddPhoto}
-                        className="h-16 px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 flex flex-col items-center justify-center text-slate-500 hover:text-slate-900 transition-colors cursor-pointer text-center"
-                        title="Adicionar foto de exemplo da máquina"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span className="text-[9px] font-bold mt-0.5">+ Exemplo</span>
+                        <Upload className="w-5 h-5 text-[#FF6B00] mb-1" />
+                        <span className="text-xs font-black">Upload WebP</span>
+                        <span className="text-[10px] text-slate-500 font-medium">800px automático</span>
                       </button>
                     </div>
                   </div>

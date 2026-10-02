@@ -243,7 +243,9 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
   };
 
   const handleRemovePhoto = (indexToRemove: number) => {
-    onChangePhotos(photos.filter((_, idx) => idx !== indexToRemove));
+    if (window.confirm("Deseja excluir esta mídia?")) {
+      onChangePhotos(photos.filter((_, idx) => idx !== indexToRemove));
+    }
   };
 
   // Status visual
@@ -371,12 +373,12 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({
               </span>
             )}
 
-            {/* Excluir foto */}
+            {/* Excluir foto: botão vermelho redondo com ícone de lixeira bem visível */}
             <button
               type="button"
               onClick={() => handleRemovePhoto(idx)}
-              className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-slate-900/70 hover:bg-rose-600 text-white transition-colors cursor-pointer shadow-xs"
-              title="Remover foto"
+              className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-red-600 hover:bg-red-700 active:scale-90 text-white transition-all cursor-pointer shadow-md flex items-center justify-center border border-white/40"
+              title="Excluir foto"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Truck, Tractor, Building2, Wrench, ShieldAlert } from 'lucide-react';
+import { getResponsiveImageProps, getOptimizedImageUrl } from '../utils/imageOptimizer';
 
 interface CardImageWithFallbackProps {
   src?: string;
@@ -8,6 +9,8 @@ interface CardImageWithFallbackProps {
   className?: string;
   imageClassName?: string;
   aspectRatioClass?: string;
+  width?: number;
+  onError?: () => void;
 }
 
 /**
@@ -41,7 +44,9 @@ export const CardImageWithFallback: React.FC<CardImageWithFallbackProps> = ({
   category = 'maquinas',
   className = '',
   imageClassName = '',
-  aspectRatioClass = 'aspect-[16/10]'
+  aspectRatioClass = 'aspect-[16/10]',
+  width = 640,
+  onError
 }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasError, setHasError] = useState<boolean>(false);
@@ -51,11 +56,12 @@ export const CardImageWithFallback: React.FC<CardImageWithFallbackProps> = ({
     if (!src || src.trim() === '') {
       setHasError(true);
       setIsLoading(false);
+      onError?.();
     } else {
       setIsLoading(true);
       setHasError(false);
     }
-  }, [src]);
+  }, [src, onError]);
 
   const renderCategoryIcon = () => {
     switch (category) {
@@ -76,6 +82,11 @@ export const CardImageWithFallback: React.FC<CardImageWithFallbackProps> = ({
         return <ExcavatorSilhouette className="w-14 h-14 text-[#9CA3AF]" />;
     }
   };
+
+  // Calcula src, srcset e sizes responsivos com redimensionamento automático
+  const responsiveImage = useMemo(() => {
+    return getResponsiveImageProps(src, [360, 480, 640, 800, 1024], width || 640);
+  }, [src, width]);
 
   return (
     <div 
@@ -114,12 +125,15 @@ export const CardImageWithFallback: React.FC<CardImageWithFallbackProps> = ({
           </div>
         </div>
       ) : (
-        /* 3. IMAGEM PRINCIPAL COM EVENTO ONERROR */
+        /* 3. IMAGEM PRINCIPAL COM EVENTO ONERROR, LAZY LOADING NATIVO, SRCSET E REDIMENSIONAMENTO */
         <img
-          src={src}
+          src={responsiveImage.src}
+          srcSet={responsiveImage.srcSet}
+          sizes={responsiveImage.sizes}
           alt={alt}
           referrerPolicy="no-referrer"
           loading="lazy"
+          decoding="async"
           onLoad={() => {
             setIsLoading(false);
             setHasError(false);
@@ -127,6 +141,7 @@ export const CardImageWithFallback: React.FC<CardImageWithFallbackProps> = ({
           onError={() => {
             setIsLoading(false);
             setHasError(true);
+            onError?.();
           }}
           className={`w-full h-full object-cover object-center transition-opacity duration-300 ${
             isLoading ? 'opacity-0' : 'opacity-100'

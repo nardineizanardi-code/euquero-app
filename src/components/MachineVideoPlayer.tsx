@@ -68,6 +68,8 @@ export const MachineVideoPlayer: React.FC<MachineVideoPlayerProps> = ({
               <img
                 src={thumbnailUrl || '/cat_320d_excavator.jpg'}
                 alt={itemTitle}
+                loading="lazy"
+                decoding="async"
                 className="absolute inset-0 w-full h-full object-cover brightness-[0.78] group-hover:scale-105 group-hover:brightness-[0.88] transition-all duration-300"
               />
 

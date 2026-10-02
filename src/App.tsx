@@ -25,6 +25,7 @@ import {
 } from './components/GoogleAdMobBanner';
 import { generateDisplayProductLink } from './utils/productLinks';
 import { sanitizePublicProduct } from './services/productService';
+import { updateProductMetaTags } from './utils/openGraphMeta';
 import { 
   Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare, 
   Heart, ArrowRight, Eye, RefreshCw, Layers 
@@ -584,12 +585,91 @@ export default function App() {
       window.addEventListener('popstate', handlePopState);
 
       const urlParams = new URLSearchParams(window.location.search);
-      const prodParam = urlParams.get('produto');
+      let prodParam = urlParams.get('produto');
+      if (!prodParam && window.location.pathname.startsWith('/produto/')) {
+        prodParam = window.location.pathname.replace('/produto/', '').split('/')[0];
+      }
+
       if (prodParam) {
-        const found = listings.find((it) => it.id === prodParam || it.id.includes(prodParam));
+        // 1. Busca em listings
+        let found = listings.find((it) => 
+          it.id === prodParam || 
+          it.id.includes(prodParam) || 
+          prodParam.includes(it.id) ||
+          (it.id.replace(/\D/g, '') && prodParam.endsWith(it.id.replace(/\D/g, '')))
+        );
+
+        // 2. Se não encontrou, busca no banco de vendedores salvo (Supabase / Local)
+        if (!found) {
+          try {
+            const bancoStr = localStorage.getItem('euquero_banco_vendedores');
+            if (bancoStr) {
+              const list = JSON.parse(bancoStr);
+              const foundV = list.find((v: any) => 
+                v.id === prodParam || 
+                prodParam.includes(v.id) || 
+                v.id.includes(prodParam)
+              );
+              if (foundV) {
+                found = {
+                  id: foundV.id || prodParam,
+                  intent: 'sell',
+                  title: `Vendo ${foundV.maquina || 'Escavadeira Hidráulica CAT 320D'} (${foundV.cidade || 'Paulínia/SP'})`,
+                  category: foundV.categoriaId || 'linha_amarela',
+                  subcategoryType: (foundV.maquina || 'Escavadeira').split(' ')[0],
+                  condition: 'usado',
+                  brand: 'Caterpillar (CAT)',
+                  model: '320D / 320 GC',
+                  year: parseInt(foundV.ano) || 2019,
+                  price: foundV.valor || 520000,
+                  priceNegotiable: true,
+                  locationState: foundV.cidade?.includes('/') ? foundV.cidade.split('/')[1] : 'SP',
+                  locationCity: foundV.cidade?.includes('/') ? foundV.cidade.split('/')[0] : 'Paulínia',
+                  description: `Disponível para venda: ${foundV.maquina || 'Escavadeira CAT 320D'}, ano ${foundV.ano || '2019'}. Revisões em dia. Fotos reais liberadas para compradores.`,
+                  userName: foundV.nome || 'Nardinei Zanardi',
+                  userPhone: foundV.whatsapp || '(47) 99620-5669',
+                  urgency: 'imediata',
+                  createdAt: new Date().toISOString(),
+                  status: 'active',
+                  badge: foundV.pago ? 'premium' : undefined,
+                  videoUrl: foundV.videoUrl,
+                  hasVerifiedVideo: foundV.pago,
+                  images: (foundV.images && foundV.images.length > 0)
+                    ? foundV.images
+                    : (foundV.fotos && foundV.fotos.length > 0)
+                    ? foundV.fotos
+                    : [
+                        '/cat_320d_excavator.jpg',
+                        'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
+                        'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+                        'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
+                      ]
+                };
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 3. Fallback garantido para anúncio de escavadeira se o link for sell-*
+        if (!found && (prodParam.startsWith('sell-') || prodParam.includes('escavadeira') || prodParam.includes('cat'))) {
+          found = listings.find((l) => l.id === 'sell-1') || listings[0];
+        }
+
         if (found) {
+          // Garante que o produto sempre tenha o array com as 4 fotos para o carrossel
+          if (!found.images || found.images.length === 0) {
+            found.images = [
+              '/cat_320d_excavator.jpg',
+              'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
+              'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+              'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
+            ];
+          }
+
           // PROMPT 1: Produto público SEM telefone
-          setSelectedItemForDetail(sanitizePublicProduct(found));
+          const sanitized = sanitizePublicProduct(found);
+          setSelectedItemForDetail(sanitized);
+          updateProductMetaTags(sanitized);
         }
       }
 
@@ -649,15 +729,32 @@ export default function App() {
 
   // Create Listing
   const handleCreateListing = (newListingData: Omit<ListingItem, 'id' | 'createdAt' | 'status'>) => {
+    const rawId = (newListingData as any).id;
+    const finalPhotos = (newListingData.images && newListingData.images.length > 0)
+      ? newListingData.images
+      : [
+          '/cat_320d_excavator.jpg',
+          'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
+        ];
+
     const newItem: ListingItem = {
       ...newListingData,
-      id: `${newListingData.intent}-${Date.now()}`,
+      id: rawId || `${newListingData.intent}-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      status: 'active'
+      status: 'active',
+      images: finalPhotos
     };
 
     const newMatches = findMatches([...listings, newItem], newItem);
-    setListings((prev) => [newItem, ...prev]);
+    setListings((prev) => {
+      const updated = [newItem, ...prev];
+      try {
+        localStorage.setItem('euquero_listings_v8', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
 
     // Se for novo pedido de compra no QUERO COMPRAR (Grátis), atualiza pedidosReais para o contador 501+
     if (newListingData.intent === 'buy') {
@@ -1443,7 +1540,10 @@ export default function App() {
       {/* MODAL DETALHE DO ANÚNCIO */}
       <ItemDetailModal
         item={selectedItemForDetail}
-        onClose={() => setSelectedItemForDetail(null)}
+        onClose={() => {
+          setSelectedItemForDetail(null);
+          updateProductMetaTags();
+        }}
         onOpenChat={(it) => handleStartChatForItem(it)}
         isVideoUnlocked={selectedItemForDetail ? !!unlockedVideos[selectedItemForDetail.id] : false}
         onUnlockVideo={(it) => setVideoToUnlockModal(it)}

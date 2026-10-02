@@ -60,7 +60,9 @@ export const INITIAL_LISTINGS: ListingItem[] = [
     videoUrl: 'https://youtu.be/Jmsm2SCzn1o',
     images: [
       '/cat_320d_excavator.jpg',
-      'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f7?w=800&auto=format&fit=crop&q=80'
+      'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
     ]
   },
   {

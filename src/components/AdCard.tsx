@@ -8,6 +8,7 @@ import { CardImageWithFallback } from './CardImageWithFallback';
 import { BuyerMachineSearchIcon } from './BuyerMachineSearchIcon';
 import { MachineVideoPlayer } from './MachineVideoPlayer';
 import { formatVendendoEm } from '../utils/geoDistance';
+import { getOptimizedImageUrl } from '../utils/imageOptimizer';
 
 interface AdCardProps {
   item: ListingItem;
@@ -189,6 +190,7 @@ export const AdCard: React.FC<AdCardProps> = ({
             alt={item.title}
             category={item.category}
             aspectRatioClass="aspect-[4/3]"
+            width={640}
             imageClassName="group-hover:scale-105 transition-transform duration-500 ease-out"
           />
 
