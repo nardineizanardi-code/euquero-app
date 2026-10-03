@@ -88,19 +88,20 @@ export function checkExactEloMatch(
 export function calculateMatchScore(
   buyer: ListingItem,
   seller: ListingItem
-): { score: number; reasons: string[] } {
+): { score: number; reasons: string[]; gaps: string[] } {
   // Can only match buyer with seller
   if (buyer.intent !== 'buy' || seller.intent !== 'sell') {
-    return { score: 0, reasons: [] };
+    return { score: 0, reasons: [], gaps: [] };
   }
 
   // Must match high level category
   if (buyer.category !== seller.category) {
-    return { score: 0, reasons: [] };
+    return { score: 0, reasons: [], gaps: [`Categorias distintas (${buyer.category} vs ${seller.category})`] };
   }
 
   let score = 30; // Base score for same category
-  const reasons: string[] = [`Mesma categoria (${buyer.category.toUpperCase()})`];
+  const reasons: string[] = ['Mesma categoria'];
+  const gaps: string[] = [];
 
   // Subcategory type check (e.g. Escavadeira Hidráulica)
   if (
@@ -108,58 +109,40 @@ export function calculateMatchScore(
     seller.subcategoryType.toLowerCase().trim()
   ) {
     score += 30;
-    reasons.push(`Mesmo tipo de equipamento: ${seller.subcategoryType}`);
+    reasons.push('Mesmo modelo');
   } else if (
     buyer.subcategoryType.toLowerCase().includes(seller.subcategoryType.toLowerCase()) ||
     seller.subcategoryType.toLowerCase().includes(buyer.subcategoryType.toLowerCase())
   ) {
-    score += 15;
-    reasons.push(`Tipo compatível: ${seller.subcategoryType}`);
-  }
-
-  // Condition check (novo vs usado)
-  if (buyer.condition === seller.condition || buyer.condition === 'indiferente') {
-    score += 10;
-    reasons.push(
-      seller.condition === 'usado'
-        ? `Condição compatível: Usado (${seller.hoursUsed ? `${seller.hoursUsed}h horímetro` : 'revisado'})`
-        : 'Condição compatível: Novo'
-    );
+    score += 20;
+    reasons.push(`Tipo compatível (${seller.subcategoryType})`);
   }
 
   // Brand check
   if (buyer.brand && seller.brand) {
-    const bBrand = buyer.brand.toLowerCase();
-    const sBrand = seller.brand.toLowerCase();
+    const bBrand = buyer.brand.toLowerCase().trim();
+    const sBrand = seller.brand.toLowerCase().trim();
     if (bBrand.includes(sBrand) || sBrand.includes(bBrand)) {
       score += 15;
-      reasons.push(`Mesma marca de preferência: ${seller.brand}`);
+      reasons.push(`Mesma marca (${seller.brand})`);
+    } else {
+      gaps.push(`Você pediu ${buyer.brand}, o anúncio é ${seller.brand}`);
     }
   } else if (!buyer.brand) {
     score += 8;
-    reasons.push('Comprador flexível quanto à marca');
-  }
-
-  // Model check if provided
-  if (buyer.model && seller.model) {
-    const bModel = buyer.model.toLowerCase();
-    const sModel = seller.model.toLowerCase();
-    if (bModel.includes(sModel) || sModel.includes(bModel)) {
-      score += 10;
-      reasons.push(`Modelo exato correspondente: ${seller.model}`);
-    }
   }
 
   // Year check
   if (seller.year) {
-    const min = buyer.yearMin ?? 1990;
+    const min = buyer.yearMin ?? 2018;
     const max = buyer.yearMax ?? 2030;
     if (seller.year >= min && seller.year <= max) {
       score += 10;
-      reasons.push(`Ano ${seller.year} dentro da faixa solicitada (${min} a ${max})`);
-    } else if (Math.abs(seller.year - min) <= 2 || Math.abs(seller.year - max) <= 2) {
-      score += 4;
-      reasons.push(`Ano ${seller.year} próximo da faixa desejada`);
+      reasons.push(`Ano ${seller.year} dentro da faixa ${min}–${max}`);
+    } else if (seller.year < min) {
+      gaps.push(`Ano ${seller.year} abaixo do mínimo solicitado (${min})`);
+    } else if (seller.year > max) {
+      gaps.push(`Ano ${seller.year} acima do máximo solicitado (${max})`);
     }
   }
 
@@ -167,34 +150,38 @@ export function calculateMatchScore(
   if (buyer.price > 0 && seller.price > 0) {
     if (seller.price <= buyer.price) {
       score += 15;
-      const diff = buyer.price - seller.price;
-      reasons.push(
-        diff === 0
-          ? `Preço exato no orçamento limite (R$ ${seller.price.toLocaleString('pt-BR')})`
-          : `Preço abaixo do orçamento máximo (Economia de R$ ${diff.toLocaleString('pt-BR')})`
-      );
+      reasons.push('Abaixo do orçamento');
     } else if (seller.price <= buyer.price * 1.15) {
       score += 8;
-      reasons.push('Preço próximo com margem plausível de negociação');
+      gaps.push(`Preço R$ ${seller.price.toLocaleString('pt-BR')} com margem negociável acima do teto`);
+    } else {
+      gaps.push(`Preço R$ ${seller.price.toLocaleString('pt-BR')} excede o orçamento`);
     }
   }
 
+  // Horímetro check
+  if (seller.hoursUsed && seller.hoursUsed >= 4000) {
+    gaps.push(`Máquina com ${seller.hoursUsed.toLocaleString('pt-BR')}h vai ter que ser negociada`);
+  }
+
   // Location affinity
-  if (buyer.locationState === seller.locationState) {
-    score += 5;
-    reasons.push(`Mesmo estado federativo (${seller.locationState}) facilitando vistoria`);
+  if (buyer.locationState && seller.locationState) {
+    if (buyer.locationState.toUpperCase() === seller.locationState.toUpperCase()) {
+      score += 5;
+    } else if (buyer.geoPreference === 'so_estado') {
+      gaps.push(`Máquina em ${seller.locationState}, fora de ${buyer.locationState}`);
+    }
   }
 
   // Checagem da Regra Oficial do EloMatch (+10% teto, categoria, marca, modelo e mesmo estado)
   const eloCheck = checkExactEloMatch(buyer, seller);
   if (eloCheck.isMatch) {
     score = Math.max(score, 96);
-    reasons.unshift('⚡ MATCH OFICIAL ELO: Categoria, marca, modelo, mesmo estado e preço dentro da margem de 10%');
   }
 
   // Cap at 100
   const finalScore = Math.min(100, score);
-  return { score: finalScore, reasons };
+  return { score: finalScore, reasons, gaps };
 }
 
 export function findMatches(
@@ -209,7 +196,7 @@ export function findMatches(
   if (targetItem) {
     if (targetItem.intent === 'buy') {
       for (const seller of sellers) {
-        const { score, reasons } = calculateMatchScore(targetItem, seller);
+        const { score, reasons, gaps } = calculateMatchScore(targetItem, seller);
         if (score >= 60) {
           matches.push({
             id: `match-${targetItem.id}-${seller.id}`,
@@ -217,6 +204,7 @@ export function findMatches(
             sellerListing: seller,
             score,
             reasons,
+            gaps,
             createdAt: new Date().toISOString(),
             status: 'new'
           });
@@ -224,7 +212,7 @@ export function findMatches(
       }
     } else {
       for (const buyer of buyers) {
-        const { score, reasons } = calculateMatchScore(buyer, targetItem);
+        const { score, reasons, gaps } = calculateMatchScore(buyer, targetItem);
         if (score >= 60) {
           matches.push({
             id: `match-${buyer.id}-${targetItem.id}`,
@@ -232,6 +220,7 @@ export function findMatches(
             sellerListing: targetItem,
             score,
             reasons,
+            gaps,
             createdAt: new Date().toISOString(),
             status: 'new'
           });
@@ -242,7 +231,7 @@ export function findMatches(
     // Cross match all buyers with all sellers
     for (const buyer of buyers) {
       for (const seller of sellers) {
-        const { score, reasons } = calculateMatchScore(buyer, seller);
+        const { score, reasons, gaps } = calculateMatchScore(buyer, seller);
         if (score >= 60) {
           matches.push({
             id: `match-${buyer.id}-${seller.id}`,
@@ -250,6 +239,7 @@ export function findMatches(
             sellerListing: seller,
             score,
             reasons,
+            gaps,
             createdAt: new Date().toISOString(),
             status: 'new'
           });

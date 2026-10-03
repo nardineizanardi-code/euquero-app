@@ -4,21 +4,25 @@ import {
   MapPin, Clock, Calendar, Check, Zap, Filter, Search 
 } from 'lucide-react';
 import { MatchResult, ListingItem } from '../types';
+import { MatchCard } from './MatchCard';
 
 interface MatchRadarProps {
   matches: MatchResult[];
   onStartChat: (match: MatchResult) => void;
   onOpenWizard: (intent: 'buy' | 'sell') => void;
+  onViewProduct?: (item: ListingItem) => void;
 }
 
 export const MatchRadar: React.FC<MatchRadarProps> = ({
   matches,
   onStartChat,
-  onOpenWizard
+  onOpenWizard,
+  onViewProduct
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [minScore, setMinScore] = useState<number>(60);
+  const [viewMode, setViewMode] = useState<'cards' | 'comparativo'>('cards');
 
   const filteredMatches = matches.filter((m) => {
     if (selectedCategory !== 'all' && m.buyerDemand.category !== selectedCategory) {
@@ -164,13 +168,52 @@ export const MatchRadar: React.FC<MatchRadarProps> = ({
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 px-1">
             <span>Mostrando {filteredMatches.length} cruzamentos entre compradores e vendedores</span>
-            <span>Atualizado em tempo real</span>
+
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'cards' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Cards Oficiais
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('comparativo')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'comparativo' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Comparativo Lado a Lado
+              </button>
+            </div>
           </div>
 
-          {filteredMatches.map((match) => {
+          {viewMode === 'cards' ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredMatches.map((match) => (
+                <MatchCard
+                  key={match.id}
+                  match={match}
+                  onViewPhotosAndVideo={(item) => {
+                    if (onViewProduct) {
+                      onViewProduct(item);
+                    } else {
+                      onStartChat(match);
+                    }
+                  }}
+                  onOpenChat={onStartChat}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredMatches.map((match) => {
             const buyer = match.buyerDemand;
             const seller = match.sellerListing;
             const scoreClass = getScoreColor(match.score);
@@ -324,6 +367,8 @@ export const MatchRadar: React.FC<MatchRadarProps> = ({
               </div>
             );
           })}
+            </div>
+          )}
         </div>
       )}
     </div>

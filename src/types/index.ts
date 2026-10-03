@@ -136,6 +136,7 @@ export interface MatchResult {
   sellerListing: ListingItem;
   score: number; // 0 - 100%
   reasons: string[];
+  gaps?: string[];
   createdAt: string;
   status: 'new' | 'contacted' | 'negotiating' | 'completed' | 'dismissed';
 }

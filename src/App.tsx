@@ -1658,6 +1658,7 @@ export default function App() {
             messages={messages}
             onOpenChat={(match) => setActiveChatMatch(match)}
             onOpenWizard={handleOpenWizard}
+            onViewProduct={(it) => setSelectedItemForDetail(sanitizePublicProduct(it))}
           />
         </main>
       )}
