@@ -150,3 +150,20 @@ export interface ChatMessage {
   proposalPrice?: number;
   proposalStatus?: 'pending' | 'accepted' | 'declined';
 }
+
+export interface ProcuraPublica {
+  id: string;
+  titulo: string;            // "Escavadeira CAT 320D"
+  subcategoria: string;
+  marcaModelo: string;
+  anoMin: number;
+  anoMax: number;
+  orcamentoMax: number;      // em centavos
+  cidade: string;
+  estado: string;
+  estadoAlcance: 'so_estado' | 'brasil';
+  criadaEm: string;          // ISO
+  expiracao: string;         // ISO
+  compradoresInteressados: number; // precisa ser REAL, nunca fixo
+}
+

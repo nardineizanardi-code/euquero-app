@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ListingItem } from '../types';
 import { CardImageWithFallback } from './CardImageWithFallback';
+import { getPrimaryProductImage } from '../utils/productImages';
 
 interface EditListingViewProps {
   listingId: string;
@@ -67,7 +68,7 @@ export const EditListingView: React.FC<EditListingViewProps> = ({
                 ? found.images
                 : (found.fotos && found.fotos.length > 0)
                 ? found.fotos
-                : ['/cat_320d_excavator.jpg']
+                : [getPrimaryProductImage({ title: found.maquina, subcategoryType: found.maquina, category: found.categoriaId })]
             };
           }
         }
@@ -93,7 +94,7 @@ export const EditListingView: React.FC<EditListingViewProps> = ({
       setLocationState(item.locationState || 'SC');
       setDescription(item.description || '');
       setVideoUrl(item.videoUrl || '');
-      setPhotos(item.images && item.images.length > 0 ? item.images : ['/cat_320d_excavator.jpg']);
+      setPhotos(item.images && item.images.length > 0 ? item.images : [getPrimaryProductImage(item)]);
       setIsPaused(!!item.isPaused);
     }
   }, [listingId, allListings]);
@@ -183,7 +184,13 @@ export const EditListingView: React.FC<EditListingViewProps> = ({
     const compressedPromises = filesToProcess.map((f) => compressImageToWebP(f));
     const newCompressedPhotos = await Promise.all(compressedPromises);
 
-    setPhotos((prev) => [...prev, ...newCompressedPhotos]);
+    setPhotos((prev) => {
+      const isInitialDefault = prev.some((p) => p.includes('cat_320d_excavator'));
+      if (isInitialDefault) {
+        return [...newCompressedPhotos, ...prev.filter((p) => !p.includes('cat_320d_excavator'))].slice(0, 12);
+      }
+      return [...newCompressedPhotos, ...prev].slice(0, 12);
+    });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 

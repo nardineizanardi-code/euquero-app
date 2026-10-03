@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { IntentType, ListingItem, MatchResult } from '../types';
 import { generateDisplayProductLink, getShareableProductUrl, slugify } from '../utils/productLinks';
+import { getPrimaryProductImage } from '../utils/productImages';
 
 export type FrotaCategoryType = 'linha_amarela' | 'agricola' | 'caminhao' | 'implementos';
 
@@ -417,7 +418,15 @@ export const WizardModal: React.FC<WizardModalProps> = ({
       return;
     }
 
+    const details = getCategoryDetails();
+    const fallbackImage = getPrimaryProductImage({
+      title: details.machineLabel,
+      category: selectedCategory || 'linha_amarela',
+      subcategoryType: details.machineLabel
+    });
+
     const samplePhotos = [
+      fallbackImage,
       'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
       'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
       'https://images.unsplash.com/photo-1541888946425-d0fbb18f15f7?w=800&auto=format&fit=crop&q=80'
@@ -431,20 +440,19 @@ export const WizardModal: React.FC<WizardModalProps> = ({
     if (!files || files.length === 0) return;
 
     const maxPhotos = sellerPlan === 'gratis' ? 4 : 12;
-    const availableSlots = maxPhotos - sellerPhotos.length;
-
-    if (availableSlots <= 0) {
-      if (sellerPlan === 'gratis') {
-        setShowPhotoLimitModal(true);
-      }
-      return;
-    }
-
-    const filesToProcess = Array.from(files).slice(0, availableSlots);
+    const filesToProcess = Array.from(files).slice(0, maxPhotos);
     const compressedPromises = filesToProcess.map((f) => compressImageToWebP(f));
     const newCompressedPhotos = await Promise.all(compressedPromises);
 
-    setSellerPhotos((prev) => [...prev, ...newCompressedPhotos]);
+    setSellerPhotos((prev) => {
+      // Se as fotos anteriores eram apenas o placeholder inicial de escavadeira, descarta e coloca a foto real do usuário na FOTO 1
+      const isInitialDefault = prev.some((p) => p.includes('cat_320d_excavator'));
+      if (isInitialDefault) {
+        return [...newCompressedPhotos, ...prev.filter((p) => !p.includes('cat_320d_excavator'))].slice(0, maxPhotos);
+      }
+      return [...newCompressedPhotos, ...prev].slice(0, maxPhotos);
+    });
+
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }

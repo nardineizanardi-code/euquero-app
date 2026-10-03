@@ -27,6 +27,7 @@ import {
 import { generateDisplayProductLink } from './utils/productLinks';
 import { sanitizePublicProduct } from './services/productService';
 import { updateProductMetaTags } from './utils/openGraphMeta';
+import { getPrimaryProductImage } from './utils/productImages';
 import { 
   Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare, 
   Heart, ArrowRight, Eye, RefreshCw, Layers 
@@ -667,12 +668,7 @@ export default function App() {
                     ? foundV.images
                     : (foundV.fotos && foundV.fotos.length > 0)
                     ? foundV.fotos
-                    : [
-                        '/cat_320d_excavator.jpg',
-                        'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
-                        'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
-                        'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
-                      ]
+                    : [getPrimaryProductImage({ title: foundV.maquina, subcategoryType: foundV.maquina, category: foundV.categoriaId })]
                 };
               }
             }
@@ -685,14 +681,12 @@ export default function App() {
         }
 
         if (found) {
-          // Garante que o produto sempre tenha o array com as 4 fotos para o carrossel
+          // Garante que a FOTO 1 seja a imagem real do anúncio em sintonia com o og:image
+          const primaryFound = getPrimaryProductImage(found);
           if (!found.images || found.images.length === 0) {
-            found.images = [
-              '/cat_320d_excavator.jpg',
-              'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
-              'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
-              'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
-            ];
+            found.images = [primaryFound];
+          } else {
+            found.images[0] = primaryFound;
           }
 
           // PROMPT 1: Produto público SEM telefone

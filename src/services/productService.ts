@@ -1,4 +1,74 @@
-import { ListingItem } from '../types';
+import { ListingItem, ProcuraPublica } from '../types';
+
+export type { ProcuraPublica };
+
+/**
+ * Calcula a quantidade REAL de compradores interessados para uma procura/máquina.
+ * Nunca é um número fixo estático: analisa os pedidos reais e pretendentes compatíveis.
+ */
+export const calculateCompradoresInteressados = (
+  item: { subcategoryType?: string; category?: string; locationState?: string; brand?: string; model?: string },
+  allListings: ListingItem[] = []
+): number => {
+  const itemCategory = (item.category || '').toLowerCase();
+  const itemSub = (item.subcategoryType || '').toLowerCase();
+
+  // Compradores reais no feed/estado
+  const realBuyers = allListings.filter((l) => {
+    if (l.intent !== 'buy') return false;
+    const lCategory = (l.category || '').toLowerCase();
+    const lSub = (l.subcategoryType || '').toLowerCase();
+
+    const matchesSub = itemSub && lSub && (itemSub.includes(lSub) || lSub.includes(itemSub));
+    const matchesCat = itemCategory && lCategory && itemCategory === lCategory;
+
+    return matchesSub || matchesCat;
+  });
+
+  // Compradores cadastrados salvos no localStorage (pedidos_compra_reais)
+  let pedidosStorageCount = 0;
+  try {
+    const pedidosStr = localStorage.getItem('pedidos_compra_reais');
+    if (pedidosStr) {
+      const pedidos = JSON.parse(pedidosStr);
+      if (Array.isArray(pedidos)) {
+        pedidosStorageCount = pedidos.filter((p: any) => {
+          const pMaq = (p.maquina || '').toLowerCase();
+          return itemSub && pMaq.includes(itemSub);
+        }).length;
+      }
+    }
+  } catch (e) {}
+
+  // A contagem é sempre REAL com base nos compradores cadastrados (mínimo 1 para a demanda existir)
+  return Math.max(1, realBuyers.length + pedidosStorageCount);
+};
+
+/**
+ * Converte um ListingItem de compra em ProcuraPublica formatada (com orçamento em centavos e compradores reais)
+ */
+export const toProcuraPublica = (
+  item: ListingItem,
+  allListings: ListingItem[] = []
+): ProcuraPublica => {
+  const brandModel = `${item.brand || ''} ${item.model || ''}`.trim() || item.title;
+
+  return {
+    id: item.id,
+    titulo: item.title,
+    subcategoria: item.subcategoryType || item.category,
+    marcaModelo: brandModel,
+    anoMin: item.yearMin || item.year || 2018,
+    anoMax: item.yearMax || item.year || 2024,
+    orcamentoMax: Math.round((item.price || 0) * 100), // Em centavos
+    cidade: item.locationCity,
+    estado: item.locationState,
+    estadoAlcance: item.geoPreference === 'so_estado' ? 'so_estado' : 'brasil',
+    criadaEm: item.createdAt || new Date().toISOString(),
+    expiracao: item.expiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    compradoresInteressados: calculateCompradoresInteressados(item, allListings)
+  };
+};
 
 /**
  * Interface do Produto Público retornado pelas queries do Supabase/API:

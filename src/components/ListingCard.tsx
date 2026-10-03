@@ -6,6 +6,7 @@ import {
 import { ListingItem } from '../types';
 import { CardImageWithFallback } from './CardImageWithFallback';
 import { BuyerMachineSearchIcon } from './BuyerMachineSearchIcon';
+import { getPrimaryProductImage } from '../utils/productImages';
 
 interface ListingCardProps {
   item: ListingItem;
@@ -103,8 +104,8 @@ export const ListingCard: React.FC<ListingCardProps> = ({
     );
   }
 
-  // Card VENDO
-  const realProductImage = item.images && item.images.length > 0 ? item.images[0] : undefined;
+  // Card VENDO: Garante que a FOTO 1 que aparece no card é a mesma do og:image
+  const realProductImage = getPrimaryProductImage(item);
 
   return (
     <div

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, AlertCircle, Camera, RefreshCw, ImageOff } from 'lucide-react';
 import { CardImageWithFallback } from './CardImageWithFallback';
+import { getPrimaryProductImage } from '../utils/productImages';
 
 interface ProductGalleryProps {
   images?: string[];
@@ -21,15 +22,16 @@ export const ProductGallery: React.FC<ProductGalleryProps> = ({
   const [brokenPhotos, setBrokenPhotos] = useState<Record<number, boolean>>({});
   const [customPhotos, setCustomPhotos] = useState<string[] | null>(null);
 
-  // Amostras padrão de alta qualidade se nenhuma for enviada
-  const defaultExcavatorPhotos = [
-    '/cat_320d_excavator.jpg',
+  // Amostras padrão coerentes com a máquina anunciada
+  const defaultMachinePhoto = getPrimaryProductImage({ title, category });
+  const defaultPhotos = [
+    defaultMachinePhoto,
     'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
   ];
 
-  const activePhotos = customPhotos || (images && images.length > 0 ? images : defaultExcavatorPhotos);
+  const activePhotos = customPhotos || (images && images.length > 0 ? images : defaultPhotos);
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -46,7 +48,7 @@ export const ProductGallery: React.FC<ProductGalleryProps> = ({
   };
 
   const handleRestorePhoto = (idx: number) => {
-    const fallback = defaultExcavatorPhotos[idx % defaultExcavatorPhotos.length];
+    const fallback = defaultPhotos[idx % defaultPhotos.length];
     setCustomPhotos((prev) => {
       const list = [...(prev || activePhotos)];
       list[idx] = fallback;

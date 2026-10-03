@@ -1,95 +1,69 @@
 /**
- * Utilitário de Tags Open Graph Dinâmicas para WhatsApp e Redes Sociais
+ * Utilitário de Tags Open Graph Dinâmicas para WhatsApp e Facebook
  * 
- * Garante que ao compartilhar o link da máquina:
- * 1. og:image = primeira foto REAL da máquina em JPG absoluto (1200x630)
- * 2. og:title = "Vendo [Título da Máquina] - R$ [Preço] | EuQuero"
- * 3. og:description = descrição curta
- * 4. Imagem sempre pública sem login
- * 5. Se for WebP, converte/fornece fallback em JPG para WhatsApp reconhecer perfeitamente
+ * Regras Estritas:
+ * 1. og:image = FOTO 1 real do anúncio em URL absoluta (https://...)
+ * 2. og:title = título real do anúncio
+ * 3. og:description = preço formatado e cidade do anúncio
+ * 4. Imagem em proporção adequada (1200x630) para exibição correta no preview
  */
 
 import { getBaseSiteUrl } from '../config/site';
+import { getPrimaryProductImage, toAbsoluteHttpsImageUrl } from './productImages';
 
-export const getPublicJpgImageUrl = (rawUrl?: string): string => {
-  const baseSiteUrl = getBaseSiteUrl();
-
-  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
-    return `${baseSiteUrl}/cat_320d_excavator.jpg`;
-  }
-
-  const trimmed = rawUrl.trim();
-
-  // Se for imagem local relativa
-  if (trimmed.startsWith('/')) {
-    return `${baseSiteUrl}${trimmed}`;
-  }
-
-  // Se for Unsplash, força formato JPG 1200x630 com alta qualidade para WhatsApp
-  if (trimmed.includes('unsplash.com')) {
-    try {
-      const parsed = new URL(trimmed);
-      parsed.searchParams.set('fm', 'jpg');
-      parsed.searchParams.set('w', '1200');
-      parsed.searchParams.set('h', '630');
-      parsed.searchParams.set('fit', 'crop');
-      parsed.searchParams.set('q', '85');
-      return parsed.toString();
-    } catch (e) {
-      return trimmed.split('?')[0] + '?fm=jpg&w=1200&h=630&fit=crop&q=85';
-    }
-  }
-
-  // Se for data URL (base64) gerado no navegador, o WhatsApp crawler não consegue fazer download de data: URLs
-  // Fornece a URL pública JPG oficial da máquina
-  if (trimmed.startsWith('data:')) {
-    return `${baseSiteUrl}/cat_320d_excavator.jpg`;
-  }
-
-  // Se a URL terminar com .webp, verifica se pode trocar para .jpg
-  if (trimmed.toLowerCase().endsWith('.webp')) {
-    return trimmed.replace(/\.webp$/i, '.jpg');
-  }
-
-  return trimmed;
-};
-
-export const updateProductMetaTags = (product?: {
+export interface ProductMetaInput {
+  id?: string;
   title?: string;
   price?: number;
   description?: string;
   images?: string[];
+  fotos?: string[];
   locationCity?: string;
   locationState?: string;
   intent?: 'buy' | 'sell';
-}) => {
+  category?: string;
+  subcategoryType?: string;
+  brand?: string;
+  model?: string;
+}
+
+export const getPublicJpgImageUrl = (rawUrl?: string, context?: ProductMetaInput): string => {
+  return toAbsoluteHttpsImageUrl(rawUrl, context);
+};
+
+export const updateProductMetaTags = (product?: ProductMetaInput) => {
   if (typeof document === 'undefined') return;
 
   const baseSiteUrl = getBaseSiteUrl();
 
   if (!product) {
-    document.title = 'Vendo Escavadeira Caterpillar 320D - R$ 520.000 | EuQuero';
+    document.title = 'EuQuero | Compra e Venda de Máquinas e Equipamentos Pesados';
     return;
   }
 
   const isBuyer = product.intent === 'buy';
   const prefix = isBuyer ? 'Compro' : 'Vendo';
-  const formattedPrice = product.price ? ` - R$ ${product.price.toLocaleString('pt-BR')}` : '';
-  const cityInfo = product.locationCity ? ` (${product.locationCity})` : '';
 
-  const cleanTitle = (product.title || 'Máquina Pesada')
-    .replace(/^(Vendo|Compro)\s+/i, '');
+  // 1. TÍTULO REAL DO ANÚNCIO
+  const rawTitle = (product.title || 'Máquina Pesada').trim();
+  const cleanTitle = rawTitle.replace(/^(Vendo|Compro)\s+/i, '');
+  const title = rawTitle.startsWith('Vendo') || rawTitle.startsWith('Compro') 
+    ? `${rawTitle} | EuQuero`
+    : `${prefix} ${cleanTitle} | EuQuero`;
 
-  const title = `${prefix} ${cleanTitle}${cityInfo}${formattedPrice} | EuQuero`;
-  
-  const desc = product.description 
-    ? product.description.slice(0, 160)
-    : `Veja fotos reais e detalhes de ${cleanTitle} no EuQuero. Plataforma inteligente para quem quer comprar e vender.`;
+  // 2. DESCRIÇÃO COM PREÇO E CIDADE
+  const formattedPrice = product.price ? `R$ ${product.price.toLocaleString('pt-BR')}` : 'Preço a consultar';
+  const cityState = product.locationCity 
+    ? `${product.locationCity}${product.locationState ? `, ${product.locationState}` : ''}`
+    : 'Brasil';
 
-  const primaryImage = product.images && product.images.length > 0 ? product.images[0] : '';
-  const publicJpgImage = getPublicJpgImageUrl(primaryImage);
+  const desc = `${formattedPrice} em ${cityState}. ${product.description ? product.description.slice(0, 130) : 'Confira fotos reais e detalhes da máquina no EuQuero.'}`;
 
-  // Atualiza título da aba
+  // 3. FOTO 1 REAL DO ANÚNCIO EM URL ABSOLUTA
+  const primaryImage = getPrimaryProductImage(product);
+  const absoluteImageUrl = toAbsoluteHttpsImageUrl(primaryImage, product);
+
+  // 4. ATUALIZAÇÃO NO DOM (TÍTULO E META TAGS)
   document.title = title;
 
   const setMeta = (attr: string, value: string, content: string) => {
@@ -102,19 +76,39 @@ export const updateProductMetaTags = (product?: {
     el.setAttribute('content', content);
   };
 
-  setMeta('name', 'description', desc);
+  const setLink = (rel: string, href: string) => {
+    let link = document.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement('link');
+      link.setAttribute('rel', rel);
+      document.head.appendChild(link);
+    }
+    link.setAttribute('href', href);
+  };
+
+  // Open Graph Padrão Facebook / WhatsApp
   setMeta('property', 'og:title', title);
   setMeta('property', 'og:description', desc);
-  setMeta('property', 'og:image', publicJpgImage);
-  setMeta('property', 'og:image:secure_url', publicJpgImage);
-  setMeta('property', 'og:image:type', 'image/jpeg');
+  setMeta('property', 'og:image', absoluteImageUrl);
+  setMeta('property', 'og:image:secure_url', absoluteImageUrl);
+  setMeta('property', 'og:image:type', absoluteImageUrl.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
   setMeta('property', 'og:image:width', '1200');
   setMeta('property', 'og:image:height', '630');
-  setMeta('property', 'og:site_name', 'EuQuero');
+  setMeta('property', 'og:image:alt', product.title || 'Foto da Máquina');
   setMeta('property', 'og:type', 'product');
+  setMeta('property', 'og:site_name', 'EuQuero');
+  if (product.id) {
+    setMeta('property', 'og:url', `${baseSiteUrl}/?produto=${encodeURIComponent(product.id)}`);
+  }
 
+  // Meta padrão e itemprop (WhatsApp e Google)
+  setMeta('name', 'description', desc);
+  setMeta('itemprop', 'image', absoluteImageUrl);
+  setLink('image_src', absoluteImageUrl);
+
+  // Twitter Cards
   setMeta('name', 'twitter:card', 'summary_large_image');
   setMeta('name', 'twitter:title', title);
   setMeta('name', 'twitter:description', desc);
-  setMeta('name', 'twitter:image', publicJpgImage);
+  setMeta('name', 'twitter:image', absoluteImageUrl);
 };

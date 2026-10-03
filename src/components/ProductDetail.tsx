@@ -13,6 +13,7 @@ import { generateDisplayProductLink, getShareableProductUrl, mascararTelefone } 
 import { formatVendendoEm } from '../utils/geoDistance';
 import { updateProductMetaTags } from '../utils/openGraphMeta';
 import { isProductOwner } from '../utils/ownerAuth';
+import { getPrimaryProductImage } from '../utils/productImages';
 
 export interface ProductDetailProps {
   item: ListingItem;
@@ -42,37 +43,33 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   const isOwner = useMemo(() => isProductOwner(item), [item]);
 
-  // Garante as 4 fotos oficiais da Escavadeira CAT 320D se nenhuma foto for encontrada
-  const defaultMachineryPhotos = useMemo(() => [
-    '/cat_320d_excavator.jpg',
-    'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=800&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=800&auto=format&fit=crop&q=80',
-    'https://images.unsplash.com/photo-1584467541268-b040f83be3fd?w=800&auto=format&fit=crop&q=80'
-  ], []);
+  // Garante que a FOTO 1 seja a mesma do card e do og:image
+  const primaryAdPhoto = useMemo(() => getPrimaryProductImage(item), [item]);
 
-  // Busca fotos do produto (product.images ou product.fotos)
+  // Busca fotos do produto preservando rigorosamente a FOTO 1 real
   const productPhotos = useMemo(() => {
-    const raw = item.images && item.images.length > 0 
-      ? item.images 
+    const raw = (item.images && item.images.length > 0)
+      ? item.images
       : (item as any).fotos && (item as any).fotos.length > 0
       ? (item as any).fotos
-      : defaultMachineryPhotos;
+      : [primaryAdPhoto];
 
-    if (raw.length < 3) {
-      const merged = [...raw];
-      for (const p of defaultMachineryPhotos) {
-        if (!merged.includes(p) && merged.length < 4) {
-          merged.push(p);
-        }
-      }
-      return merged;
+    // Garante que a primeira foto seja a FOTO 1 real identificada
+    const cleaned = raw.filter((p: string) => typeof p === 'string' && p.trim() !== '');
+    if (cleaned.length === 0) {
+      return [primaryAdPhoto];
     }
-    return raw;
-  }, [item, defaultMachineryPhotos]);
+
+    return cleaned;
+  }, [item, primaryAdPhoto]);
 
   useEffect(() => {
-    updateProductMetaTags(item);
-  }, [item]);
+    // Atualiza metatags OG imediatamente com a FOTO 1 real, título real e descrição com preço e cidade
+    updateProductMetaTags({
+      ...item,
+      images: productPhotos
+    });
+  }, [item, productPhotos]);
 
   const isBuyer = item.intent === 'buy';
   const displayProductLink = generateDisplayProductLink(item);
@@ -91,7 +88,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   };
 
   const handleShareWhatsApp = () => {
-    const shareText = `Veja fotos reais e preço de ${item.title} no EuQuero: ${shareableProductUrl}`;
+    const priceText = item.price ? ` - R$ ${item.price.toLocaleString('pt-BR')}` : '';
+    const cityText = item.locationCity ? ` (${item.locationCity})` : '';
+    const shareText = `${item.title}${priceText}${cityText}: ${shareableProductUrl}`;
     const zapUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
     window.open(zapUrl, '_blank');
   };
