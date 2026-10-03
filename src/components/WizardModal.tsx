@@ -35,40 +35,40 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   // DADOS ESPECÍFICOS DE CADA CATEGORIA (LINHA AMARELA, AGRÍCOLA, CAMINHÃO, IMPLEMENTO)
   // =========================================================================
   // 1. Linha Amarela
-  const [laSubtype, setLaSubtype] = useState<string>('Escavadeira');
-  const [laMarcaModelo, setLaMarcaModelo] = useState<string>('Caterpillar (CAT) 320D');
-  const [laAno, setLaAno] = useState<string>('2019');
-  const [laHoras, setLaHoras] = useState<string>('4.200h');
+  const [laSubtype, setLaSubtype] = useState<string>('');
+  const [laMarcaModelo, setLaMarcaModelo] = useState<string>('');
+  const [laAno, setLaAno] = useState<string>('');
+  const [laHoras, setLaHoras] = useState<string>('');
 
   // 2. Agrícola
-  const [agroSubtype, setAgroSubtype] = useState<string>('Trator Agrícola');
-  const [agroMarcaModelo, setAgroMarcaModelo] = useState<string>('John Deere 8R');
-  const [agroAno, setAgroAno] = useState<string>('2021');
-  const [agroHoras, setAgroHoras] = useState<string>('1.800h');
+  const [agroSubtype, setAgroSubtype] = useState<string>('');
+  const [agroMarcaModelo, setAgroMarcaModelo] = useState<string>('');
+  const [agroAno, setAgroAno] = useState<string>('');
+  const [agroHoras, setAgroHoras] = useState<string>('');
 
   // 3. Caminhão (Ficha Mais Completa)
-  const [truckSubtype, setTruckSubtype] = useState<string>('Cavalo Mecânico');
-  const [truckMarca, setTruckMarca] = useState<string>('Volvo');
-  const [truckModelo, setTruckModelo] = useState<string>('FH 540');
-  const [truckAno, setTruckAno] = useState<string>('2022');
-  const [truckKm, setTruckKm] = useState<string>('280.000 km');
-  const [truckTracao, setTruckTracao] = useState<string>('6x4');
+  const [truckSubtype, setTruckSubtype] = useState<string>('');
+  const [truckMarca, setTruckMarca] = useState<string>('');
+  const [truckModelo, setTruckModelo] = useState<string>('');
+  const [truckAno, setTruckAno] = useState<string>('');
+  const [truckKm, setTruckKm] = useState<string>('');
+  const [truckTracao, setTruckTracao] = useState<string>('');
 
   // 4. Implemento de Caminhão
-  const [impSubtype, setImpSubtype] = useState<string>('Prancha');
-  const [impMarca, setImpMarca] = useState<string>('Randon');
-  const [impAno, setImpAno] = useState<string>('2021');
-  const [impEixos, setImpEixos] = useState<string>('3 Eixos');
-  const [impComprimento, setImpComprimento] = useState<string>('14,50m');
+  const [impSubtype, setImpSubtype] = useState<string>('');
+  const [impMarca, setImpMarca] = useState<string>('');
+  const [impAno, setImpAno] = useState<string>('');
+  const [impEixos, setImpEixos] = useState<string>('');
+  const [impComprimento, setImpComprimento] = useState<string>('');
 
   // =========================================================================
   // CAMPOS COMUNS DO COMPRADOR (QUERO COMPRAR - 100% GRÁTIS)
   // =========================================================================
-  const [buyerName, setBuyerName] = useState<string>('Carlos Mendes');
-  const [buyerPhone, setBuyerPhone] = useState<string>('(47) 99620-5669');
-  const [buyerCity, setBuyerCity] = useState<string>('Joinville/SC');
-  const [buyerBudget, setBuyerBudget] = useState<string>('520.000');
-  const [buyerPaymentMethod, setBuyerPaymentMethod] = useState<string>('À vista');
+  const [buyerName, setBuyerName] = useState<string>('');
+  const [buyerPhone, setBuyerPhone] = useState<string>('');
+  const [buyerCity, setBuyerCity] = useState<string>('');
+  const [buyerBudget, setBuyerBudget] = useState<string>('');
+  const [buyerPaymentMethod, setBuyerPaymentMethod] = useState<string>('');
   const [buyerSuccess, setBuyerSuccess] = useState<boolean>(false);
 
   // =========================================================================
@@ -76,11 +76,11 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   // =========================================================================
   const [sellerStep, setSellerStep] = useState<1 | 2 | 3>(1); // 1 = Form, 2 = Checkout R$ 19,90, 3 = Sucesso
   const [sellerPlan, setSellerPlan] = useState<'gratis' | 'verificado'>('gratis');
-  const [sellerName, setSellerName] = useState<string>('Nardinei Zanardi');
-  const [sellerPhone, setSellerPhone] = useState<string>('(47) 99620-5669');
-  const [sellerCity, setSellerCity] = useState<string>('Paulínia/SP');
-  const [sellerPrice, setSellerPrice] = useState<string>('520.000');
-  const [sellerCpf, setSellerCpf] = useState<string>('123.456.789-00');
+  const [sellerName, setSellerName] = useState<string>('');
+  const [sellerPhone, setSellerPhone] = useState<string>('');
+  const [sellerCity, setSellerCity] = useState<string>('');
+  const [sellerPrice, setSellerPrice] = useState<string>('');
+  const [sellerCpf, setSellerCpf] = useState<string>('');
   const [sellerVideoUrl, setSellerVideoUrl] = useState<string>('');
   const [sellerIsPlayingVideo, setSellerIsPlayingVideo] = useState<boolean>(false);
   const [videoDuplicateError, setVideoDuplicateError] = useState<string>('');
@@ -968,6 +968,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setLaSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Escavadeira">Escavadeira</option>
                           <option value="Retroescavadeira">Retroescavadeira</option>
                           <option value="Pá Carregadeira">Pá Carregadeira</option>
@@ -1033,6 +1034,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setAgroSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Trator Agrícola">Trator Agrícola</option>
                           <option value="Colheitadeira">Colheitadeira</option>
                           <option value="Plantadeira">Plantadeira</option>
@@ -1097,6 +1099,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Cavalo Mecânico">Cavalo Mecânico</option>
                           <option value="Truck">Truck</option>
                           <option value="Toco">Toco</option>
@@ -1114,6 +1117,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckMarca(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Volvo">Volvo</option>
                           <option value="Scania">Scania</option>
                           <option value="Mercedes-Benz">Mercedes-Benz</option>
@@ -1174,6 +1178,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckTracao(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="6x2">6x2</option>
                           <option value="6x4">6x4</option>
                           <option value="4x2">4x2</option>
@@ -1195,6 +1200,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setImpSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Prancha">Prancha</option>
                           <option value="Baú">Baú</option>
                           <option value="Graneleiro">Graneleiro</option>
@@ -1242,6 +1248,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setImpEixos(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="2 Eixos">2 Eixos</option>
                           <option value="3 Eixos">3 Eixos</option>
                           <option value="4 Eixos">4 Eixos</option>
@@ -1374,6 +1381,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                         onChange={(e) => setBuyerPaymentMethod(e.target.value)}
                         className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:border-emerald-600 outline-none cursor-pointer"
                       >
+                        <option value="">Selecione…</option>
                         <option value="À vista">À vista (Recurso próprio / TED / PIX)</option>
                         <option value="Financiado">Financiado (Banco / Financiamento pesado)</option>
                         <option value="Aceita proposta">Aceita proposta (Entrada + parcelas)</option>
@@ -1471,6 +1479,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setLaSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Escavadeira">Escavadeira</option>
                           <option value="Retroescavadeira">Retroescavadeira</option>
                           <option value="Pá Carregadeira">Pá Carregadeira</option>
@@ -1536,6 +1545,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setAgroSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Trator Agrícola">Trator Agrícola</option>
                           <option value="Colheitadeira">Colheitadeira</option>
                           <option value="Plantadeira">Plantadeira</option>
@@ -1600,6 +1610,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Cavalo Mecânico">Cavalo Mecânico</option>
                           <option value="Truck">Truck</option>
                           <option value="Toco">Toco</option>
@@ -1617,6 +1628,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckMarca(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Volvo">Volvo</option>
                           <option value="Scania">Scania</option>
                           <option value="Mercedes-Benz">Mercedes-Benz</option>
@@ -1677,6 +1689,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setTruckTracao(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="6x2">6x2</option>
                           <option value="6x4">6x4</option>
                           <option value="4x2">4x2</option>
@@ -1698,6 +1711,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setImpSubtype(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="Prancha">Prancha</option>
                           <option value="Baú">Baú</option>
                           <option value="Graneleiro">Graneleiro</option>
@@ -1745,6 +1759,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                           onChange={(e) => setImpEixos(e.target.value)}
                           className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-amber-600 outline-none cursor-pointer"
                         >
+                          <option value="">Selecione…</option>
                           <option value="2 Eixos">2 Eixos</option>
                           <option value="3 Eixos">3 Eixos</option>
                           <option value="4 Eixos">4 Eixos</option>
