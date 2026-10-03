@@ -829,6 +829,12 @@ export default function App() {
     setIsWizardOpen(true);
   };
 
+  const handleTenhoEssaMaquina = (buyerItem: ListingItem) => {
+    setSelectedItemForDetail(null);
+    setWizardIntent('sell');
+    setIsWizardOpen(true);
+  };
+
   // Create Listing
   const handleCreateListing = (newListingData: Omit<ListingItem, 'id' | 'createdAt' | 'status'>) => {
     const rawId = (newListingData as any).id;
@@ -1656,7 +1662,7 @@ export default function App() {
         </main>
       )}
 
-      {/* MODAL DETALHE DO ANÚNCIO */}
+      {/* MODAL DETALHE DO ANÚNCIO / PROCURA PÚBLICA */}
       <ItemDetailModal
         item={selectedItemForDetail}
         onClose={() => {
@@ -1669,6 +1675,9 @@ export default function App() {
         onEdit={(it) => navigateToEditListing(it)}
         onDelete={(it) => handleDeleteListing(it)}
         onTogglePause={(it) => handleTogglePauseListing(it)}
+        allListings={listings}
+        onTenhoEssaMaquina={handleTenhoEssaMaquina}
+        onSelectProcura={(it) => setSelectedItemForDetail(sanitizePublicProduct(it))}
       />
 
       {/* MODAL DE DESBLOQUEIO DE VÍDEO (R$ 19,90) */}
