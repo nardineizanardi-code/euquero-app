@@ -6,7 +6,7 @@ import {
   Tractor, Truck, Container, Construction, Upload, Trash2
 } from 'lucide-react';
 import { IntentType, ListingItem, MatchResult } from '../types';
-import { generateDisplayProductLink, getShareableProductUrl, slugify } from '../utils/productLinks';
+import { generateDisplayProductLink, getShareableProductUrl, slugify, mascararTelefone } from '../utils/productLinks';
 import { getPrimaryProductImage } from '../utils/productImages';
 
 export type FrotaCategoryType = 'linha_amarela' | 'agricola' | 'caminhao' | 'implementos';
@@ -1367,7 +1367,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                         required
                         value={buyerPhone}
                         onChange={(e) => setBuyerPhone(e.target.value)}
-                        placeholder="(47) 99620-5669"
+                        placeholder={mascararTelefone('(47) 99620-5669')}
                         className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-mono font-bold focus:border-emerald-600 outline-none"
                       />
                     </div>
@@ -1403,7 +1403,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                   </div>
 
                   <p className="text-[11px] text-center text-slate-500">
-                    💬 Ao salvar, enviamos a notificação: <strong>Novo comprador: {currentDetails.catName} {currentDetails.machineLabel} em {buyerCity}</strong> para WhatsApp (47) 99620-5669.
+                    💬 Ao salvar, enviamos a notificação: <strong>Novo comprador: {currentDetails.catName} {currentDetails.machineLabel} em {buyerCity}</strong> para WhatsApp {mascararTelefone('(47) 99620-5669')}.
                   </p>
                 </form>
               )}
@@ -1810,7 +1810,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                         required
                         value={sellerPhone}
                         onChange={(e) => setSellerPhone(e.target.value)}
-                        placeholder="(47) 99620-5669"
+                        placeholder={mascararTelefone('(47) 99620-5669')}
                         className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-mono font-bold focus:border-amber-600 outline-none"
                       />
                     </div>

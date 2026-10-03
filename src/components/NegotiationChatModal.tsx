@@ -4,6 +4,7 @@ import {
   DollarSign, ShieldCheck, CheckCircle2, ShieldAlert, Lock, AlertTriangle
 } from 'lucide-react';
 import { MatchResult, ChatMessage } from '../types';
+import { mascararTelefone } from '../utils/productLinks';
 
 interface NegotiationChatModalProps {
   match: MatchResult | null;
@@ -259,7 +260,7 @@ export const NegotiationChatModal: React.FC<NegotiationChatModalProps> = ({
               </p>
               <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
                 <span className="px-3 py-1.5 bg-white border border-emerald-300 rounded-lg font-mono font-bold text-xs text-slate-900 shadow-xs">
-                  {seller.userName}: {seller.userPhone || '(47) 99620-5669'}
+                  {seller.userName}: {seller.userPhone || mascararTelefone('(47) 99620-5669')}
                 </span>
                 <button
                   type="button"

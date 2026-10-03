@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   CheckCircle2, ShieldCheck, ExternalLink, MessageSquare, Play
 } from 'lucide-react';
+import { mascararTelefone } from '../utils/productLinks';
 
 interface MachineVideoPlayerProps {
   itemId: string;
@@ -158,7 +159,7 @@ export const MachineVideoPlayer: React.FC<MachineVideoPlayerProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  📍 <strong>Paulínia/SP - Joinville/SC</strong> · WhatsApp: <span className="font-bold text-emerald-400 font-mono">(47) 9962-XXXX</span>
+                  📍 <strong>Paulínia/SP - Joinville/SC</strong> · WhatsApp: <span className="font-bold text-emerald-400 font-mono">{mascararTelefone('(47) 99620-5669')}</span>
                 </p>
               </div>
             </div>

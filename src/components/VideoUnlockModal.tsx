@@ -3,6 +3,7 @@ import {
   X, Lock, Unlock, QrCode, CreditCard, Copy, CheckCircle2, 
   ShieldCheck, Video, Play, MessageSquare, AlertCircle
 } from 'lucide-react';
+import { mascararTelefone } from '../utils/productLinks';
 
 interface VideoUnlockModalProps {
   isOpen: boolean;
@@ -299,7 +300,7 @@ export const VideoUnlockModal: React.FC<VideoUnlockModalProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-600 mt-1 font-mono">
-                    📍 <strong>Paulínia/SP - Joinville/SC</strong> · WhatsApp: <span className="font-bold text-emerald-700">(47) 9962-XXXX</span>
+                    📍 <strong>Paulínia/SP - Joinville/SC</strong> · WhatsApp: <span className="font-bold text-emerald-700">{mascararTelefone('(47) 99620-5669')}</span>
                   </p>
                 </div>
               </div>
