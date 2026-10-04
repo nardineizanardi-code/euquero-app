@@ -1,16 +1,16 @@
 import { ListingItem } from '../types';
 
 export interface CurrentUser {
-  id: string;
-  name: string;
+  id?: string;
+  name?: string;
   cpf?: string;
   phone?: string;
   role?: string;
 }
 
-export const getCurrentUser = (): CurrentUser => {
+export const getCurrentUser = (): CurrentUser | null => {
   if (typeof window === 'undefined') {
-    return { id: 'user-seller-nardinei', name: 'Nardinei Zanardi' };
+    return null;
   }
 
   try {
@@ -18,22 +18,16 @@ export const getCurrentUser = (): CurrentUser => {
     if (saved) {
       const parsed = JSON.parse(saved);
       return {
-        id: parsed.id || 'user-seller-nardinei',
-        name: parsed.nome || 'Nardinei Zanardi',
-        cpf: parsed.cpf || '123.456.789-00',
-        phone: parsed.whatsapp || '(47) 99620-5669',
-        role: 'Vendedor Oficial'
+        id: parsed.id,
+        name: parsed.nome,
+        cpf: parsed.cpf,
+        phone: parsed.whatsapp,
+        role: parsed.role
       };
     }
   } catch (e) {}
 
-  return {
-    id: 'user-seller-nardinei',
-    name: 'Nardinei Zanardi',
-    cpf: '123.456.789-00',
-    phone: '(47) 99620-5669',
-    role: 'Vendedor Oficial'
-  };
+  return null;
 };
 
 export const isProductOwner = (
@@ -51,6 +45,7 @@ export const isProductOwner = (
   }
 
   const currentUser = getCurrentUser();
+  if (!currentUser) return false;
 
   // 1. Checa ownerId direto
   if (item.ownerId && item.ownerId === currentUser.id) {
