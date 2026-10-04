@@ -23,11 +23,12 @@ export const generateDisplayProductLink = (item: {
   locationCity?: string;
   locationState?: string;
 }): string => {
+  const origin = getBaseSiteUrl();
   const machineSlug = slugify(item.title || 'maquina');
   const citySlug = slugify(item.locationCity || 'joinville');
   const stateSlug = slugify(item.locationState || 'sc');
-  const cleanId = item.id.replace(/\D/g, '').slice(-3) || '101';
-  return `www.euquero.app.br/produto/${machineSlug}-${citySlug}-${stateSlug}-${cleanId}`;
+  const cleanId = item.id;
+  return `${origin}/produto/${machineSlug}-${citySlug}-${stateSlug}?produto=${encodeURIComponent(item.id)}`;
 };
 
 /**

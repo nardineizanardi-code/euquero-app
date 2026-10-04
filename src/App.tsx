@@ -372,6 +372,7 @@ export default function App() {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardIntent, setWizardIntent] = useState<IntentType>('buy');
   const [selectedItemForDetail, setSelectedItemForDetail] = useState<ListingItem | null>(null);
+  const [productNotFound, setProductNotFound] = useState<boolean>(false);
   const [activeChatMatch, setActiveChatMatch] = useState<MatchResult | null>(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isPretendentesOpen, setIsPretendentesOpen] = useState(false);
@@ -675,11 +676,6 @@ export default function App() {
           } catch (e) {}
         }
 
-        // 3. Fallback garantido para anúncio de escavadeira se o link for sell-*
-        if (!found && (prodParam.startsWith('sell-') || prodParam.includes('escavadeira') || prodParam.includes('cat'))) {
-          found = listings.find((l) => l.id === 'sell-1') || listings[0];
-        }
-
         if (found) {
           // Garante que a FOTO 1 seja a imagem real do anúncio em sintonia com o og:image
           const primaryFound = getPrimaryProductImage(found);
@@ -693,6 +689,8 @@ export default function App() {
           const sanitized = sanitizePublicProduct(found);
           setSelectedItemForDetail(sanitized);
           updateProductMetaTags(sanitized);
+        } else {
+          setProductNotFound(true);
         }
       }
 
