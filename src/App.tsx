@@ -461,24 +461,12 @@ export default function App() {
       const saved = localStorage.getItem('euquero_pedidos_reais_comprador');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
     } catch (e) {}
-    // real = 1 (você: Carlos Mendes cadastrado no EloMatch) -> totalMostrado = 501
-    return [
-      {
-        id: 'pedido-real-1',
-        nome: 'Carlos Mendes',
-        whatsapp: '(47) 99620-5669',
-        cidade: 'Joinville/SC',
-        maquina: 'Escavadeira CAT 320D',
-        orcamento: 520000,
-        formaPagamento: 'À vista',
-        createdAt: '2026-09-26T10:00:00Z'
-      }
-    ];
+    return [];
   });
 
   // Banco Vendedores cadastrados via QUERO VENDER

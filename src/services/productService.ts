@@ -40,8 +40,8 @@ export const calculateCompradoresInteressados = (
     }
   } catch (e) {}
 
-  // A contagem é sempre REAL com base nos compradores cadastrados (mínimo 1 para a demanda existir)
-  return Math.max(1, realBuyers.length + pedidosStorageCount);
+  // A contagem é sempre REAL com base nos compradores cadastrados
+  return realBuyers.length + pedidosStorageCount;
 };
 
 /**

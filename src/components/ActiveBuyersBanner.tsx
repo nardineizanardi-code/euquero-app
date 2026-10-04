@@ -80,7 +80,7 @@ export const ActiveBuyersBanner: React.FC<ActiveBuyersBannerProps> = ({
               {formattedBuyers}
             </span>
             <span className="font-black text-white uppercase text-xs sm:text-sm tracking-tight group-hover:text-orange-100">
-              COMPRADORES ATIVOS
+              {(isBumping ? stats.totalBuyers : displayValue) === 1 ? 'COMPRADOR ATIVO' : 'COMPRADORES ATIVOS'}
             </span>
             <span className="relative flex h-2 w-2 ml-0.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
