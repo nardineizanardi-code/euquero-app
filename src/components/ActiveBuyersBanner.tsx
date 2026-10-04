@@ -13,13 +13,10 @@ export interface ActiveBuyersStats {
 // real = contar pedidos reais cadastrados no QUERO COMPRAR (Grátis) do EloMatch
 // totalMostrado = base + real
 // Quando pedidosReais chegar em 500 (total 1000), remover base e mostrar só real
-export const BASE_COMPRADORES_ESCONDIDO = 500;
+export const BASE_COMPRADORES_ESCONDIDO = 0;
 
 export const calculateTotalShownBuyers = (realOrdersCount: number): number => {
-  if (realOrdersCount >= 500) {
-    return realOrdersCount;
-  }
-  return BASE_COMPRADORES_ESCONDIDO + realOrdersCount;
+  return realOrdersCount;
 };
 
 interface ActiveBuyersBannerProps {
@@ -29,7 +26,7 @@ interface ActiveBuyersBannerProps {
 }
 
 export const DEFAULT_ACTIVE_BUYERS_STATS: ActiveBuyersStats = {
-  totalBuyers: 501, // Começa com 501: base 500 + 1 real (você: Carlos Mendes)
+  totalBuyers: 0,
   linhaAmarela: 5,
   agricola: 4,
   youtubeVideos: 312,

@@ -1924,7 +1924,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                         </div>
                       ) : (
                         <p className="text-[11px] text-amber-900/80 leading-snug">
-                          Aceitar CPFs diferentes da mesma família no lançamento para popular rápido. Cada CPF/CNPJ tem direito a 5 máquinas grátis por 30 dias.
+                          Você pode publicar 5 anúncios grátis em 30 dias. Depois disso, cada anúncio custa R$ 19,90.
                         </p>
                       )}
                     </div>

@@ -30,7 +30,7 @@ import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
 import { 
   Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare, 
-  Heart, ArrowRight, Eye, RefreshCw, Layers 
+  Heart, ArrowRight, Eye, RefreshCw, Layers, SearchX, X 
 } from 'lucide-react';
 
 import { ListingItem, MatchResult, ChatMessage, IntentType } from './types';
@@ -373,6 +373,7 @@ export default function App() {
   const [wizardIntent, setWizardIntent] = useState<IntentType>('buy');
   const [selectedItemForDetail, setSelectedItemForDetail] = useState<ListingItem | null>(null);
   const [productNotFound, setProductNotFound] = useState<boolean>(false);
+  const [buscaSemResultado, setBuscaSemResultado] = useState<boolean>(false);
   const [activeChatMatch, setActiveChatMatch] = useState<MatchResult | null>(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isPretendentesOpen, setIsPretendentesOpen] = useState(false);
@@ -541,7 +542,7 @@ export default function App() {
   // Real = número de cadastros em QUERO COMPRAR (Grátis) + QUERO VENDER + CONVITES
   // Total mostrado = 500 + real (quando real >= 500, remover base e mostrar só real)
   const totalCompradoresMostrado = useMemo(() => {
-    const realTotal = Math.max(1, pedidosReais.length + vendedoresCadastrados.length + convidadosCadastrados.length);
+    const realTotal = pedidosReais.length + vendedoresCadastrados.length + convidadosCadastrados.length;
     return calculateTotalShownBuyers(realTotal);
   }, [pedidosReais.length, vendedoresCadastrados.length, convidadosCadastrados.length]);
 
@@ -921,6 +922,8 @@ export default function App() {
         setActivePushAlert(newAlert);
         setAlertsHistory((prev) => [newAlert, ...prev]);
       }, 1000);
+    } else {
+      setBuscaSemResultado(true);
     }
 
     return newMatches;
@@ -1742,6 +1745,58 @@ export default function App() {
         onClose={() => setIsAdMobMetricsOpen(false)}
         activeBuyersCount={totalCompradoresMostrado}
       />
+
+      {/* AVISO: NENHUMA MÁQUINA COMPATÍVEL AGORA */}
+      {buscaSemResultado && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-200 relative">
+            <button
+              type="button"
+              onClick={() => setBuscaSemResultado(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mb-4">
+              <SearchX className="w-6 h-6 stroke-[2.2]" />
+            </div>
+
+            <h3 className="text-lg sm:text-xl font-black text-slate-900 leading-snug">
+              Nenhuma máquina compatível agora
+            </h3>
+
+            <p className="text-xs sm:text-sm text-slate-600 mt-2.5 leading-relaxed">
+              Não encontramos anúncio que combine com essa busca dentro do alcance que você está usando.
+            </p>
+
+            <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+              Máquina usada muda de mão rápido. A maior parte do estoque está em outro estado — vale ampliar o alcance antes de concluir que não tem.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setGeoScopeFilter('brasil_todo');
+                  setBuscaSemResultado(false);
+                }}
+                className="w-full py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-sm shadow-lg shadow-emerald-700/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <span>Ampliar para o Brasil todo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBuscaSemResultado(false)}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition-colors cursor-pointer"
+              >
+                <span>Continuar com o alcance atual</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BANNER FIXO RODAPÉ ESTILO APP DE MÚSICA - APENAS USUÁRIO GRÁTIS */}
       {!isUserAdFreeState && (
