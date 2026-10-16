@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, MessageSquare, Search, Flame, Tag, ChevronDown } from 'lucide-react';
+import { Bell, MessageSquare, Search, Flame, Tag, ChevronDown, LogOut } from 'lucide-react';
 import { ActiveBuyersBanner, ActiveBuyersStats } from './ActiveBuyersBanner';
 
 interface HeaderProps {
@@ -11,6 +11,10 @@ interface HeaderProps {
   setSearchQuery: (q: string) => void;
   onOpenPretendentes: () => void;
   onOpenMeusAnuncios?: () => void;
+  /** Sessão real do Supabase. `null` = ninguém conectado. */
+  sessao?: { uid: string; email: string; nome: string } | null;
+  onAbrirAuth: () => void;
+  onSair: () => void;
   pretendentesCount?: number;
   activeBuyersStats?: ActiveBuyersStats;
   onSelectBuyersTicker?: () => void;
@@ -26,6 +30,9 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onOpenPretendentes,
   onOpenMeusAnuncios,
+  sessao,
+  onAbrirAuth,
+  onSair,
   pretendentesCount = 4,
   activeBuyersStats,
   onSelectBuyersTicker,
@@ -117,25 +124,58 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="relative" ref={eqMenuRef}>
             <button
               type="button"
-              onClick={() => setIsEqMenuOpen(!isEqMenuOpen)}
-              className="w-9 h-9 rounded-full bg-[#0F172A] text-white flex items-center justify-center font-black text-xs shadow-sm cursor-pointer hover:ring-2 hover:ring-[#FF6B00] transition-all"
-              title="Menu do Usuário EuQuero"
+              onClick={() => {
+                // Deslogado, o botão principal É o login. Quem não tem
+                // conta não deveria ter que abrir um menu para achar a
+                // porta de entrada.
+                if (!sessao) { onAbrirAuth(); return; }
+                setIsEqMenuOpen(!isEqMenuOpen);
+              }}
+              className={`w-9 h-9 rounded-full text-white flex items-center justify-center
+                          font-black text-xs shadow-sm cursor-pointer transition-all
+                          hover:ring-2 hover:ring-[#FF6B00] ${
+                            sessao ? 'bg-[#0F172A]' : 'bg-[#FF6B00]'
+                          }`}
+              title={sessao ? 'Menu do Usuário EuQuero' : 'Entrar ou criar conta'}
             >
-              EQ
+              {sessao ? sessao.nome.slice(0, 2).toUpperCase() : 'EQ'}
             </button>
 
             {isEqMenuOpen && (
               <div className="absolute right-0 top-11 w-52 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-3.5 py-2 border-b border-slate-100">
-                  <p className="text-xs font-black text-slate-900">Minha Conta EuQuero</p>
-                  <p className="text-[10px] text-slate-400">Painel do Anunciante</p>
+                  <p className="text-xs font-black text-slate-900 truncate">
+                    {sessao ? sessao.nome : 'Minha Conta EuQuero'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {sessao ? sessao.email : 'Painel do Anunciante'}
+                  </p>
                 </div>
+
+                {/* SAIR — só existe com sessão. Este é o botão que tira a
+                    pessoa da conta: ele chama `signOut()` no servidor
+                    (App.tsx → handleSair → sairSessao), e não apaga nada
+                    do navegador por conta própria. */}
+                {sessao && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsEqMenuOpen(false); onSair(); }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sair</span>
+                  </button>
+                )}
 
                 {/* LINK SOLICITADO: Meus Anúncios -> /meus-anuncios */}
                 <button
                   type="button"
                   onClick={() => {
                     setIsEqMenuOpen(false);
+                    // Sem sessão, o painel mostraria dados de exemplo
+                    // como se fossem da pessoa. Abrir o login é mais
+                    // honesto do que fingir que o painel existe.
+                    if (!sessao) { onAbrirAuth(); return; }
                     if (onOpenMeusAnuncios) {
                       onOpenMeusAnuncios();
                     }
