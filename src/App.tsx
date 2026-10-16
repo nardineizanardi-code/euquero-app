@@ -29,7 +29,14 @@ import { sanitizePublicProduct } from './services/productService';
 import { TelaAuth } from './components/TelaAuth';
 import { TelaRedefinirSenha } from './components/TelaRedefinirSenha';
 import { lerSessaoAtual, aoMudarSessao, sair as sairSessao, type Sessao } from './services/sessao';
-import { decidirRota, ehRotaDeRedefinicao, destinoDoLogin, rotaPrivada } from './services/rotas';
+import {
+  decidirRota,
+  ehRotaDeRedefinicao,
+  destinoDoLogin,
+  destinoAposEntrar,
+  podeRenderizar as podeRenderizarView,
+  sessaoConfirmada as temSessaoConfirmada,
+} from './services/rotas';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
 import { 
@@ -457,6 +464,18 @@ export default function App() {
 
     const decisaoRota = decidirRota(caminhoAtual, sessaoCarregando, sessao !== null);
 
+    // Uma vez para a tela e para a navegação usarem a mesma resposta.
+    // Se cada um consultasse `sessao` por conta própria, um poderia
+    // ver `null` e o outro `true` no mesmo instante.
+    const sessaoOk = temSessaoConfirmada(sessaoCarregando, sessao !== null);
+
+    // A tela privada é decidida pelo VISUALIZADO, não pela URL. A URL
+    // pode ainda não ter acompanhado o `setCurrentView` — e decidir por
+    // ela deixaria a tela privada renderizar sem sessão.
+    const podeVerTelaPrivada = podeRenderizarView(
+      currentView, sessaoCarregando, sessao !== null
+    );
+
     useEffect(() => {
       if (decisaoRota !== 'bloqueada') return;
       // Rota privada sem sessão: o conteúdo privado não chega a
@@ -744,7 +763,11 @@ export default function App() {
   const navigateToMeusAnuncios = () => {
     // O painel é do dono. Sem sessão real, ele mostraria dados de
     // exemplo como se fossem da pessoa — por isso o login vem antes.
-    if (!sessao) { setAuthAberto(true); return; }
+    //
+    // `sessaoOk`, e não `!sessao`: enquanto a sessão ainda não
+    // respondeu do servidor, `sessao` é `null` e a pessoa veria o
+    // login aparecer a cada F5, mesmo estando logada.
+    if (!sessaoOk) { setAuthAberto(true); return; }
     try {
       window.history.pushState({}, '', '/meus-anuncios');
     } catch (e) {}
@@ -752,6 +775,15 @@ export default function App() {
   };
 
   const navigateToEditListing = (item: ListingItem) => {
+    // Esta função mudava a URL e a tela sem olhar a sessão. Quem
+    // tocasse num anúncio recebia o formulário de edição inteiro
+    // deslogado — e, pior, a URL ficava numa rota privada com o
+    // histórico do navegador apontando para lá.
+    //
+    // A guarda vem ANTES do pushState: se a pessoa for barrada, a URL
+    // não pode ter mudado. Um replaceState depois desfaz a rota, mas
+    // deixa o histórico gravado.
+    if (!sessaoOk) { setAuthAberto(true); return; }
     try {
       window.history.pushState({}, '', `/editar-anuncio?id=${item.id}`);
     } catch (e) {}
@@ -1651,14 +1683,17 @@ export default function App() {
             )}
           </section>
         </main>
-      ) : decisaoRota !== 'permitida' ? (
+      ) : !podeVerTelaPrivada ? (
         /* ───────────────────────────────────────────────────────────────
-           CARREGANDO OU BLOQUEADO — nada privado é renderizado aqui.
+           CARREGANDO OU SEM SESSÃO — nada privado é renderizado aqui.
 
-           Enquanto a sessão não chega do servidor, a pessoa vê uma
-           espera. Se a sessão não vier, a URL já foi para a raiz pelo
-           efeito da guarda. Nos dois casos, o painel de exemplo — ou o
-           de outra pessoa — não chega a aparecer.
+           A verificação acontece durante o render, não depois dele: um
+           efeito roda tarde demais, porque o quadro em que a tela
+           privada já apareceu já foi pintado na tela do navegador.
+
+           Enquanto a sessão não chega, espera. Se não vier, o efeito da
+           guarda leva a URL para a raiz. Nos dois casos, o painel — o
+           de exemplo ou o de outra pessoa — não aparece.
            ─────────────────────────────────────────────────────────────── */
         <div className="flex-1 flex items-center justify-center py-24">
           <p className="text-sm text-slate-500">Conferindo sua sessão…</p>
@@ -1717,7 +1752,31 @@ export default function App() {
         onFechar={() => setAuthAberto(false)}
         onEntrou={async () => {
           setAuthAberto(false);
-          setSessao(await lerSessaoAtual());
+          const entrou = await lerSessaoAtual();
+          setSessao(entrou);
+
+          // A guarda grava o destino barrado em `?redirect=`. Sem este
+          // passo, a pessoa digitava /meus-anuncios de propósito, era
+          // mandada para o login, entrava — e voltava para o feed, sem
+          // saber por quê.
+          //
+          // `destinoAposEntrar` só devolve rota de `ROTAS_PRIVADAS`:
+          // o `redirect` vem da URL, e URL é entrada de usuário.
+          const destino = destinoAposEntrar(window.location.search);
+          if (destino && entrou) {
+            window.history.replaceState({}, '', destino.rota + destino.busca);
+            setCaminhoAtual(destino.rota);
+            if (destino.rota === '/editar-anuncio') {
+              // Sem isto, o formulário abriria vazio: o id do anúncio
+              // viaja na query, e trocar a view não o recupera.
+              setEditingListingId(
+                new URLSearchParams(destino.busca).get('id') || ''
+              );
+              setCurrentView('editar_anuncio');
+            } else {
+              setCurrentView('meus_anuncios');
+            }
+          }
         }}
       />
 
