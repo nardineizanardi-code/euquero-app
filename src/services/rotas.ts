@@ -211,3 +211,98 @@ export const decidirNavegarPrivado = (
   if (sessaoCarregando) return 'aguardar';
   return temSessao ? 'permitir' : 'pedir-login';
 };
+
+/* ══════════════════════════════════════════════════════════════════
+   NAVEGAÇÃO PENDENTE — O CLIQUE QUE CHEGOU CEDO DEMAIS
+   ══════════════════════════════════════════════════════════════════
+   Decidir "aguardar" resolve metade do problema. A outra metade é o
+   que acontece com o clique que foi descartado: sem nada, a pessoa
+   clica no anúncio logo após o F5, nada acontece, e ela clica de
+   novo sem saber por quê.
+
+   Guardar a intenção e retomá-la quando o servidor responde é o
+  fechamento. A regra que importa: a intenção é consumida UMA vez.
+   Se ela sobreviver depois de executada, um re-render ou uma troca
+   de sessão dispararia a mesma navegação outra vez — a pessoa iria
+   para o painel sem ter clicado em nada.
+
+   Estas funções são puras de propósito. A execução mora no
+   componente; a decisão, aqui. É o que permite testar "cliquei durante
+   o carregamento e a sessão chegou" sem navegador.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** O que a pessoa pediu. Distingue os dois destinos privados. */
+export type IntencaoNavegar =
+  | { readonly tipo: 'meus-anuncios' }
+  | { readonly tipo: 'editar-anuncio'; readonly id: string };
+
+/** A rota que a intenção corresponde. */
+export const rotaDaIntencao = (i: IntencaoNavegar): string =>
+  i.tipo === 'editar-anuncio' ? '/editar-anuncio' : '/meus-anuncios';
+
+/**
+ * A query que a intenção carrega.
+ *
+ * O id do anúncio não é detalhe: `/editar-anuncio` sem ele abre um
+ * formulário em branco, e a pessoa entra na edição e não reconhece
+ * qual anúncio está vendo.
+ */
+export const buscaDaIntencao = (i: IntencaoNavegar): string => {
+  if (i.tipo === 'editar-anuncio' && i.id) {
+    return `?id=${encodeURIComponent(i.id)}`;
+  }
+  return '';
+};
+
+export const destinoDaIntencao = (i: IntencaoNavegar): string =>
+  rotaDaIntencao(i) + buscaDaIntencao(i);
+
+/** O que fazer com um pedido que acabou de chegar. */
+export type AcaoNavegar =
+  /** Nada agora: sessão em verificação. A intenção fica guardada. */
+  | { readonly tipo: 'guardar'; readonly intencao: IntencaoNavegar }
+  /** Executar já. */
+  | { readonly tipo: 'executar'; readonly intencao: IntencaoNavegar }
+  /** Abrir o login, guardando o destino para continuar depois. */
+  | { readonly tipo: 'abrir-login'; readonly intencao: IntencaoNavegar };
+
+/** O que o pedido vira, dada a situação da sessão. */
+export const aoPedirNavegar = (
+  intencao: IntencaoNavegar,
+  sessaoCarregando: boolean,
+  temSessao: boolean
+): AcaoNavegar => {
+  const decisao = decidirNavegarPrivado(sessaoCarregando, temSessao);
+  if (decisao === 'aguardar') return { tipo: 'guardar', intencao };
+  if (decisao === 'permitir') return { tipo: 'executar', intencao };
+  return { tipo: 'abrir-login', intencao };
+};
+
+/** O que fazer com uma intenção que ficou guardada. */
+export type ResolucaoPendente =
+  /** Ainda não deu: a verificação continua. A intenção permanece. */
+  | { readonly tipo: 'aguardar' }
+  /** Executar e descartar. */
+  | { readonly tipo: 'executar'; readonly intencao: IntencaoNavegar }
+  /** Login, e o destino fica na URL para a volta. */
+  | { readonly tipo: 'abrir-login'; readonly intencao: IntencaoNavegar };
+
+/**
+ * Resolve a intenção guardada assim que a verificação termina.
+ *
+ * `intencao === null` significa "não há nada pendente" — e devolve
+ * `aguardar`, para o efeito sair sem tocar em nada. É esse o caminho
+ * que garante execução única: depois de consumir, a intenção vira
+ * `null`, e a próxima verificação não tem o que executar.
+ */
+export const resolverPendente = (
+  intencao: IntencaoNavegar | null,
+  sessaoCarregando: boolean,
+  temSessao: boolean
+): ResolucaoPendente => {
+  if (intencao === null) return { tipo: 'aguardar' };
+  if (sessaoCarregando) return { tipo: 'aguardar' };
+  return temSessao
+    ? { tipo: 'executar', intencao }
+    : { tipo: 'abrir-login', intencao };
+};

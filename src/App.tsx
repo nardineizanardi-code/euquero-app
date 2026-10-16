@@ -32,10 +32,15 @@ import { lerSessaoAtual, aoMudarSessao, sair as sairSessao, type Sessao } from '
 import {
   decidirRota,
   ehRotaDeRedefinicao,
-  destinoDoLogin,
+  destinoDoLogin as urlDeBloqueio,
   destinoAposEntrar,
-  podeRenderizar as podeRenderizarView,
-  decidirNavegarPrivado,
+  podeRenderizar as podeVerViewPrivada,
+  aoPedirNavegar,
+  resolverPendente,
+  rotaDaIntencao,
+  buscaDaIntencao,
+  destinoDaIntencao,
+  type IntencaoNavegar,
 } from './services/rotas';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
@@ -467,7 +472,7 @@ export default function App() {
     // A tela privada é decidida pelo VISUALIZADO, não pela URL. A URL
     // pode ainda não ter acompanhado o `setCurrentView` — e decidir por
     // ela deixaria a tela privada renderizar sem sessão.
-    const podeVerTelaPrivada = podeRenderizarView(
+    const podeVerTelaPrivada = podeVerViewPrivada(
       currentView, sessaoCarregando, sessao !== null
     );
 
@@ -476,7 +481,7 @@ export default function App() {
       // Rota privada sem sessão: o conteúdo privado não chega a
       // renderizar, e a URL volta para a raiz guardando o destino, para
       // a pessoa voltar a ele depois de entrar.
-      const destino = destinoDoLogin(
+      const destino = urlDeBloqueio(
         typeof window !== 'undefined' ? window.location.pathname : '/',
         typeof window !== 'undefined' ? window.location.search : ''
       );
@@ -755,44 +760,105 @@ export default function App() {
     } catch (e) {}
   }, []);
 
-  const navigateToMeusAnuncios = () => {
-    // O painel é do dono. Sem sessão real, ele mostraria dados de
-    // exemplo como se fossem da pessoa — por isso o login vem antes.
-    //
-    // Três estados, não dois. Durante a verificação não se abre modal
-    // nem se mexe na URL: a resposta chega em instantes, e pedir login
-    // agora faria quem está logado ver o modal a cada F5.
-    const decisao = decidirNavegarPrivado(sessaoCarregando, sessao !== null);
-    if (decisao === 'aguardar') return;
-    if (decisao === 'pedir-login') { setAuthAberto(true); return; }
+  /* ══════════════════════════════════════════════════════════════════
+     NAVEGAÇÃO PRIVADA COM INTENÇÃO PENDENTE
+
+     O clique pode chegar antes de a sessão responder. Nesses casos:
+     guardar a intenção, sem mexer na URL, na tela ou no modal. Quando
+     o servidor responde, a intenção é consumida — uma única vez.
+
+     Consumir uma vez não é detalhe. Se a intenção sobrevivesse depois
+     de executada, um re-render ou uma troca de conta dispararia a
+     mesma navegação de novo, e a pessoa iria para o painel sem ter
+     clicado em nada.
+     ══════════════════════════════════════════════════════════════════ */
+  const [navegacaoPendente, setNavegacaoPendente] =
+    useState<IntencaoNavegar | null>(null);
+
+  // Um ref, e não só o estado, porque o efeito pode rodar duas vezes no
+  // mesmo ciclo: o StrictMode do React monta, desmonta e remonta em
+  // desenvolvimento. O estado já estaria `null` na segunda vez, mas o
+  // ref é o que garante que a navegação não seja executada de novo.
+  const pedidoExecutadoRef = useRef<IntencaoNavegar | null>(null);
+
+  /** A navegação em si. Um ponto só, para as duas entradas. */
+  const executarNavegacao = useCallback((intencao: IntencaoNavegar) => {
     try {
-      window.history.pushState({}, '', '/meus-anuncios');
+      window.history.pushState({}, '', destinoDaIntencao(intencao));
     } catch (e) {}
-    setCurrentView('meus_anuncios');
+    setCaminhoAtual(rotaDaIntencao(intencao));
+    if (intencao.tipo === 'editar-anuncio') {
+      setEditingListingId(intencao.id);
+      setSelectedItemForDetail(null);
+      setCurrentView('editar_anuncio');
+    } else {
+      setCurrentView('meus_anuncios');
+    }
+  }, []);
+
+  /** Abre o login guardando o destino, para a pessoa voltar depois. */
+  const abrirLoginGuardandoDestino = useCallback((intencao: IntencaoNavegar) => {
+    setAuthAberto(true);
+    // O destino vai para a URL porque é de lá que `destinoAposEntrar`
+    // lê, no `onEntrou`. Sem esta linha, quem caísse no login voltaria
+    // para o feed depois de entrar.
+    try {
+      window.history.replaceState(
+        {},
+        '',
+        urlDeBloqueio(rotaDaIntencao(intencao), buscaDaIntencao(intencao))
+      );
+    } catch (e) {}
+  }, []);
+
+  /** Ponto de entrada dos cliques. */
+  const pedirNavegacao = useCallback(
+    (intencao: IntencaoNavegar) => {
+      const acao = aoPedirNavegar(intencao, sessaoCarregando, sessao !== null);
+      if (acao.tipo === 'guardar') {
+        // Carregando: a intenção fica, e NADA mais muda. Nem a URL, nem
+        // a tela, nem o modal.
+        setNavegacaoPendente(acao.intencao);
+        return;
+      }
+      if (acao.tipo === 'executar') {
+        executarNavegacao(acao.intencao);
+        return;
+      }
+      abrirLoginGuardandoDestino(acao.intencao);
+    },
+    [sessaoCarregando, sessao, executarNavegacao, abrirLoginGuardandoDestino]
+  );
+
+  // A retomada. Dispara quando a verificação TERMINA, não quando o
+  // clique acontece.
+  useEffect(() => {
+    if (sessaoCarregando) return;
+    if (navegacaoPendente === null) return;
+    if (pedidoExecutadoRef.current === navegacaoPendente) return;
+
+    // Consome ANTES de qualquer efeito colateral: a partir daqui a
+    // intenção não existe mais, mesmo que o resto da linha lance.
+    pedidoExecutadoRef.current = navegacaoPendente;
+    setNavegacaoPendente(null);
+
+    const r = resolverPendente(navegacaoPendente, false, sessao !== null);
+    if (r.tipo === 'executar') executarNavegacao(r.intencao);
+    else if (r.tipo === 'abrir-login') abrirLoginGuardandoDestino(r.intencao);
+  }, [sessaoCarregando, sessao, navegacaoPendente, executarNavegacao, abrirLoginGuardandoDestino]);
+
+  const navigateToMeusAnuncios = () => {
+    // O painel é do dono. Sem sessão, ele mostraria dados de exemplo
+    // como se fossem da pessoa — por isso a sessão vem antes.
+    pedirNavegacao({ tipo: 'meus-anuncios' });
   };
 
   const navigateToEditListing = (item: ListingItem) => {
     // Esta função mudava a URL e a tela sem olhar a sessão. Quem
     // tocasse num anúncio recebia o formulário de edição inteiro
-    // deslogado — e, pior, a URL ficava numa rota privada com o
-    // histórico do navegador apontando para lá.
-    //
-    // A guarda vem ANTES do pushState: se a pessoa for barrada, a URL
-    // não pode ter mudado. Um replaceState depois desfaz a rota, mas
-    // deixa o histórico gravado.
-    //
-    // E o estado "carregando" não abre o login: quem está logado e
-    // clica no anúncio logo após o F5 ficaria com o modal aberto
-    // sobre o feed, e leria isso como ter sido desconectado.
-    const decisao = decidirNavegarPrivado(sessaoCarregando, sessao !== null);
-    if (decisao === 'aguardar') return;
-    if (decisao === 'pedir-login') { setAuthAberto(true); return; }
-    try {
-      window.history.pushState({}, '', `/editar-anuncio?id=${item.id}`);
-    } catch (e) {}
-    setEditingListingId(item.id);
-    setSelectedItemForDetail(null);
-    setCurrentView('editar_anuncio');
+    // deslogado — e a URL ficava numa rota privada, com o histórico
+    // do navegador apontando para lá.
+    pedirNavegacao({ tipo: 'editar-anuncio', id: item.id });
   };
 
   const handleDeleteListing = (itemOrId: ListingItem | string) => {
