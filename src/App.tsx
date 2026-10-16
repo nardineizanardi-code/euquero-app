@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { CategoryCarousel } from './components/CategoryCarousel';
@@ -26,6 +26,9 @@ import {
 } from './components/GoogleAdMobBanner';
 import { generateDisplayProductLink } from './utils/productLinks';
 import { sanitizePublicProduct } from './services/productService';
+import { TelaAuth } from './components/TelaAuth';
+import { TelaRedefinirSenha } from './components/TelaRedefinirSenha';
+import { lerSessaoAtual, aoMudarSessao, sair as sairSessao, type Sessao } from './services/sessao';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
 import { 
@@ -298,6 +301,22 @@ const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
   }
 ];
 
+/**
+ * `/redefinir-senha` é uma página inteira, não um modal.
+ *
+ * O motivo é prático: quem clica no link de redefinição chega num
+ * carregamento novo do navegador, sem o app já montado e sem sessão. Se
+ * essa tela fosse um modal dentro do App, ela dependeria de todo o
+ * restante da interface estar pronto para aparecer — e o caminho mais
+ * importante da recuperação de senha ficaria refém do feed, do header e
+ * da vitrine. Separada, ela carrega sozinha.
+ */
+const EhPaginaDeRedefinicao = (): boolean => {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const caminho = window.location.pathname.replace(/\/+$/, '') || '/';
+  return caminho === '/redefinir-senha';
+};
+
 export default function App() {
   // Navigation: 'home' (Feed principal), 'chat' (Negociações diretas), 'meus_anuncios' (/meus-anuncios ou /painel-vendedor) ou 'editar_anuncio' (/editar-anuncio)
   const [currentView, setCurrentView] = useState<'home' | 'chat' | 'meus_anuncios' | 'editar_anuncio'>(() => {
@@ -357,6 +376,24 @@ export default function App() {
     return INITIAL_LISTINGS;
   });
 
+
+  /**
+   * DETALHE PÚBLICO POR ID — fecha o buraco do link direto.
+   *
+   * Sem este efeito, abrir `/produto/ID` de um anúncio que está no banco
+   * mas não no localStorage caía direto em "produto não encontrado". A
+   * vitrine é assíncrona e o deep link é síncrono: na hora em que a URL é
+   * lida, a resposta do Supabase ainda não chegou.
+   *
+   * Aqui a espera vira estado, não erro:
+   *   - carregando         → nada de "não encontrado" ainda
+   *   - veio o anúncio     → abre o modal
+   *   - veio null          → aí sim "não encontrado"
+   *   - sem config no .env → também "não encontrado", porque sem
+   *                           Supabase configurado o link por id
+   *                           realmente não tem de onde resolver
+   */
+
   // Chat Messages state
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -369,10 +406,59 @@ export default function App() {
   });
 
   // Modals & Drawers
+  /* ══════════════════════════════════════════════════════════════════
+     SESSÃO REAL — entrega 1
+
+     Substitui a identidade que vinha de `localStorage` por uma pergunta
+     ao servidor. A diferença que importa: mexer no `localStorage` não
+     muda mais quem a pessoa é, porque o id vem assinado do Supabase e o
+     RLS decide o que ela vê.
+
+     `ownerAuth.ts` segue existindo e intocado, ainda lendo o
+     `localStorage`. Ele não é mais o que decide quem está logado — só
+     o menu do vendedor ainda usa, e isso será corrigido na entrega em
+     que os anúncios passarem a ser gravados.
+     ══════════════════════════════════════════════════════════════════ */
+  const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [sessaoCarregando, setSessaoCarregando] = useState(true);
+  const [authAberto, setAuthAberto] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    void (async () => {
+      const atual = await lerSessaoAtual();
+      if (!vivo) return;
+      setSessao(atual);
+      setSessaoCarregando(false);
+    })();
+    // A troca de conta (login em um navegador, outro em outro) chega
+    // por aqui, sem recarregar a página.
+    const parar = aoMudarSessao((s) => { if (vivo) setSessao(s); });
+    return () => { vivo = false; parar(); };
+  }, []);
+
+  const handleSair = useCallback(async () => {
+    await sairSessao();
+    setSessao(null);
+  }, []);
+
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardIntent, setWizardIntent] = useState<IntentType>('buy');
   const [selectedItemForDetail, setSelectedItemForDetail] = useState<ListingItem | null>(null);
   const [productNotFound, setProductNotFound] = useState<boolean>(false);
+
+  /**
+   * ID vindo da URL (`/produto/ID` ou `?produto=ID`), guardado separado do
+   * modal.
+   *
+   * Ele precisa existir como estado porque a busca pública do detalhe é
+   * ASSÍNCRONA, e o efeito de deep link roda uma vez só, no mount. Na
+   * época em que ele roda, a vitrine do Supabase ainda não voltou — o
+   * `listings` ainda é o do localStorage. Sem este estado, a única saída é
+   * "não encontrado", e um link direto para um anúncio que existe no banco
+   * mostrava erro para quem clicou num link válido.
+   */
+
   const [buscaSemResultado, setBuscaSemResultado] = useState<boolean>(false);
   const [activeChatMatch, setActiveChatMatch] = useState<MatchResult | null>(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
@@ -604,110 +690,13 @@ export default function App() {
       };
       window.addEventListener('popstate', handlePopState);
 
-      const urlParams = new URLSearchParams(window.location.search);
-      let prodParam = urlParams.get('produto');
-      if (!prodParam && window.location.pathname.startsWith('/produto/')) {
-        prodParam = window.location.pathname.replace('/produto/', '').split('/')[0];
-      }
-
-      if (prodParam) {
-        // 1. Busca em listings
-        let found = listings.find((it) => 
-          it.id === prodParam || 
-          it.id.includes(prodParam) || 
-          prodParam.includes(it.id) ||
-          (it.id.replace(/\D/g, '') && prodParam.endsWith(it.id.replace(/\D/g, '')))
-        );
-
-        // 2. Se não encontrou, busca no banco de vendedores salvo (Supabase / Local)
-        if (!found) {
-          try {
-            const bancoStr = localStorage.getItem('euquero_banco_vendedores');
-            if (bancoStr) {
-              const list = JSON.parse(bancoStr);
-              const foundV = list.find((v: any) => 
-                v.id === prodParam || 
-                prodParam.includes(v.id) || 
-                v.id.includes(prodParam)
-              );
-              if (foundV) {
-                found = {
-                  id: foundV.id || prodParam,
-                  intent: 'sell',
-                  title: `Vendo ${foundV.maquina || 'Escavadeira Hidráulica CAT 320D'} (${foundV.cidade || 'Paulínia/SP'})`,
-                  category: foundV.categoriaId || 'linha_amarela',
-                  subcategoryType: (foundV.maquina || 'Escavadeira').split(' ')[0],
-                  condition: 'usado',
-                  brand: 'Caterpillar (CAT)',
-                  model: '320D / 320 GC',
-                  year: parseInt(foundV.ano) || 2019,
-                  price: foundV.valor || 520000,
-                  priceNegotiable: true,
-                  locationState: foundV.cidade?.includes('/') ? foundV.cidade.split('/')[1] : 'SP',
-                  locationCity: foundV.cidade?.includes('/') ? foundV.cidade.split('/')[0] : 'Paulínia',
-                  description: `Disponível para venda: ${foundV.maquina || 'Escavadeira CAT 320D'}, ano ${foundV.ano || '2019'}. Revisões em dia. Fotos reais liberadas para compradores.`,
-                  userName: foundV.nome || 'Nardinei Zanardi',
-                  userPhone: foundV.whatsapp || '(47) 99620-5669',
-                  urgency: 'imediata',
-                  createdAt: new Date().toISOString(),
-                  status: 'active',
-                  badge: foundV.pago ? 'premium' : undefined,
-                  videoUrl: foundV.videoUrl,
-                  hasVerifiedVideo: foundV.pago,
-                  images: (foundV.images && foundV.images.length > 0)
-                    ? foundV.images
-                    : (foundV.fotos && foundV.fotos.length > 0)
-                    ? foundV.fotos
-                    : [getPrimaryProductImage({ title: foundV.maquina, subcategoryType: foundV.maquina, category: foundV.categoriaId })]
-                };
-              }
-            }
-          } catch (e) {}
-        }
-
-        if (found) {
-          // Garante que a FOTO 1 seja a imagem real do anúncio em sintonia com o og:image
-          const primaryFound = getPrimaryProductImage(found);
-          if (!found.images || found.images.length === 0) {
-            found.images = [primaryFound];
-          } else {
-            found.images[0] = primaryFound;
-          }
-
-          // PROMPT 1: Produto público SEM telefone
-          const sanitized = sanitizePublicProduct(found);
-          setSelectedItemForDetail(sanitized);
-          updateProductMetaTags(sanitized);
-        } else {
-          setProductNotFound(true);
-        }
-      }
-
-      const conviteParam = urlParams.get('convite');
-      if (conviteParam) {
-        setConvidadosCadastrados((prev) => {
-          if (!prev.includes(conviteParam)) {
-            return [conviteParam, ...prev];
-          }
-          return prev;
-        });
-
-        setActivePushAlert({
-          id: `alert-convite-${Date.now()}`,
-          title: '🎉 Bem-vindo via Convite Oficial!',
-          body: 'Você entrou pelo convite de Nardinei Zanardi e já é um COMPRADOR ATIVO. O contador subiu!',
-          targetItem: listings[0],
-          timestamp: 'Agora'
-        });
-      }
-
-      return () => {
-        window.removeEventListener('popstate', handlePopState);
-      };
     } catch (e) {}
   }, []);
 
   const navigateToMeusAnuncios = () => {
+    // O painel é do dono. Sem sessão real, ele mostraria dados de
+    // exemplo como se fossem da pessoa — por isso o login vem antes.
+    if (!sessao) { setAuthAberto(true); return; }
     try {
       window.history.pushState({}, '', '/meus-anuncios');
     } catch (e) {}
@@ -1132,6 +1121,13 @@ export default function App() {
     }));
   };
 
+  // A página de redefinição sai antes de qualquer interface. Todos os
+  // hooks acima já rodaram — o early-return fica aqui, depois deles, e
+  // não antes, para não quebrar a ordem de execução.
+  if (EhPaginaDeRedefinicao()) {
+    return <TelaRedefinirSenha />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F8F9FA] text-slate-900 selection:bg-orange-100 selection:text-orange-950 font-sans">
       
@@ -1152,6 +1148,9 @@ export default function App() {
         setSearchQuery={setSearchQuery}
         onOpenPretendentes={() => setIsPretendentesOpen(true)}
         onOpenMeusAnuncios={navigateToMeusAnuncios}
+        sessao={sessao}
+        onAbrirAuth={() => setAuthAberto(true)}
+        onSair={handleSair}
         pretendentesCount={sellerPanelInfo.count}
         activeBuyersStats={activeBuyersStats}
         onSelectBuyersTicker={() => {
@@ -1651,6 +1650,16 @@ export default function App() {
           />
         </main>
       )}
+
+      {/* TELA DE ENTRAR / CRIAR CONTA (entrega 1) */}
+      <TelaAuth
+        aberto={authAberto}
+        onFechar={() => setAuthAberto(false)}
+        onEntrou={async () => {
+          setAuthAberto(false);
+          setSessao(await lerSessaoAtual());
+        }}
+      />
 
       {/* MODAL DETALHE DO ANÚNCIO / PROCURA PÚBLICA */}
       <ItemDetailModal
