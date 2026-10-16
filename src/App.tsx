@@ -35,7 +35,7 @@ import {
   destinoDoLogin,
   destinoAposEntrar,
   podeRenderizar as podeRenderizarView,
-  sessaoConfirmada as temSessaoConfirmada,
+  decidirNavegarPrivado,
 } from './services/rotas';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
@@ -464,11 +464,6 @@ export default function App() {
 
     const decisaoRota = decidirRota(caminhoAtual, sessaoCarregando, sessao !== null);
 
-    // Uma vez para a tela e para a navegação usarem a mesma resposta.
-    // Se cada um consultasse `sessao` por conta própria, um poderia
-    // ver `null` e o outro `true` no mesmo instante.
-    const sessaoOk = temSessaoConfirmada(sessaoCarregando, sessao !== null);
-
     // A tela privada é decidida pelo VISUALIZADO, não pela URL. A URL
     // pode ainda não ter acompanhado o `setCurrentView` — e decidir por
     // ela deixaria a tela privada renderizar sem sessão.
@@ -764,10 +759,12 @@ export default function App() {
     // O painel é do dono. Sem sessão real, ele mostraria dados de
     // exemplo como se fossem da pessoa — por isso o login vem antes.
     //
-    // `sessaoOk`, e não `!sessao`: enquanto a sessão ainda não
-    // respondeu do servidor, `sessao` é `null` e a pessoa veria o
-    // login aparecer a cada F5, mesmo estando logada.
-    if (!sessaoOk) { setAuthAberto(true); return; }
+    // Três estados, não dois. Durante a verificação não se abre modal
+    // nem se mexe na URL: a resposta chega em instantes, e pedir login
+    // agora faria quem está logado ver o modal a cada F5.
+    const decisao = decidirNavegarPrivado(sessaoCarregando, sessao !== null);
+    if (decisao === 'aguardar') return;
+    if (decisao === 'pedir-login') { setAuthAberto(true); return; }
     try {
       window.history.pushState({}, '', '/meus-anuncios');
     } catch (e) {}
@@ -783,7 +780,13 @@ export default function App() {
     // A guarda vem ANTES do pushState: se a pessoa for barrada, a URL
     // não pode ter mudado. Um replaceState depois desfaz a rota, mas
     // deixa o histórico gravado.
-    if (!sessaoOk) { setAuthAberto(true); return; }
+    //
+    // E o estado "carregando" não abre o login: quem está logado e
+    // clica no anúncio logo após o F5 ficaria com o modal aberto
+    // sobre o feed, e leria isso como ter sido desconectado.
+    const decisao = decidirNavegarPrivado(sessaoCarregando, sessao !== null);
+    if (decisao === 'aguardar') return;
+    if (decisao === 'pedir-login') { setAuthAberto(true); return; }
     try {
       window.history.pushState({}, '', `/editar-anuncio?id=${item.id}`);
     } catch (e) {}

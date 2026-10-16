@@ -177,3 +177,37 @@ export const destinoAposEntrar = (
   const restante = params.toString();
   return { rota: p, busca: restante ? `?${restante}` : '' };
 };
+
+/* ══════════════════════════════════════════════════════════════════
+   PEDIR LOGIN NÃO É A MESMA COISA QUE AINDA NÃO SABER
+   ══════════════════════════════════════════════════════════════════
+   `sessao` começa em `null` em dois momentos que não se confundem:
+
+     • a verificação ainda está em andamento;
+     • a verificação terminou e não havia sessão.
+
+   Tratar os dois com `!sessaoOk` abre o modal de login no primeiro
+   caso. O efeito é pior do que parece: quem está logado dá F5, clica
+   no próprio anúncio antes de o servidor responder, e o modal abre
+   por cima do feed. A pessoa conclui que foi desconectada.
+
+   A diferença importa também para a URL. Enquanto a verificação está
+   em curso não há nada a decidir, e a resposta chega em instantes:
+   empurrar a pessoa para o login agora é cedo demais.
+
+   ══════════════════════════════════════════════════════════════════ */
+
+export type DecisaoNavegar = 'aguardar' | 'permitir' | 'pedir-login';
+
+/**
+ * O que fazer ao pedir navegação para uma rota privada.
+ *
+ * `aguardar` — não faz nada: nem modal, nem URL, nem troca de tela.
+ */
+export const decidirNavegarPrivado = (
+  sessaoCarregando: boolean,
+  temSessao: boolean
+): DecisaoNavegar => {
+  if (sessaoCarregando) return 'aguardar';
+  return temSessao ? 'permitir' : 'pedir-login';
+};
