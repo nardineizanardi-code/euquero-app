@@ -1,0 +1,30 @@
+{
+  "_comentario": [
+    "Configuração de typecheck dos SERVIÇOS e seus testes.",
+    "Separada do tsconfig.json do app porque exige `types: [node]` (o app não usa",
+    "Node no browser) e `strict: true`, mais rigoroso do que o tsconfig do app.",
+    "Não emite nada: é só verificação.",
+    "Rodar:  npx tsc -p tsconfig.check.json",
+    "`types` inclui `vite/client` para que `import.meta.env` seja tipado",
+    "aqui como é no app. Sem isso, ler o ambiente vira `any` ou exige",
+    "cast — e cast quebra a reescrita que o loader de teste faz, porque",
+    "o texto `import.meta.env` precisa aparecer literal no fonte."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": ["node", "vite/client"]
+  },
+  "include": [
+    "src/services/**/*.ts",
+    "src/types/**/*.ts"
+  ]
+}
