@@ -29,6 +29,7 @@ import { sanitizePublicProduct } from './services/productService';
 import { TelaAuth } from './components/TelaAuth';
 import { TelaRedefinirSenha } from './components/TelaRedefinirSenha';
 import { lerSessaoAtual, aoMudarSessao, sair as sairSessao, type Sessao } from './services/sessao';
+import { decidirRota, ehRotaDeRedefinicao, destinoDoLogin, rotaPrivada } from './services/rotas';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
 import { 
@@ -313,8 +314,7 @@ const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
  */
 const EhPaginaDeRedefinicao = (): boolean => {
   if (typeof window === 'undefined' || !window.location) return false;
-  const caminho = window.location.pathname.replace(/\/+$/, '') || '/';
-  return caminho === '/redefinir-senha';
+  return ehRotaDeRedefinicao(window.location.pathname);
 };
 
 export default function App() {
@@ -422,6 +422,54 @@ export default function App() {
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [sessaoCarregando, setSessaoCarregando] = useState(true);
   const [authAberto, setAuthAberto] = useState(false);
+
+    /* ══════════════════════════════════════════════════════════════════
+       GUARDA DE ROTAS
+
+       `currentView` nasce do `pathname`. Sem esta guarda, digitar
+       `/meus-anuncios` na barra de endereços abria o painel sem
+       consultar a sessão — o login do menu protegia só um caminho.
+
+       A guarda cobre os três jeitos de chegar numa rota: acesso direto,
+       navegação por histórico (voltar/avançar) e logout. Nos três, a
+       decisão é a mesma função, `decidirRota`.
+
+       Ela NÃO é segurança. Esconde a tela; quem pede dados ao banco
+       esbarra no RLS, e é lá que a proteção real está.
+       ══════════════════════════════════════════════════════════════════ */
+    const [caminhoAtual, setCaminhoAtual] = useState<string>(() =>
+      typeof window !== 'undefined' && window.location ? window.location.pathname : '/'
+    );
+
+    useEffect(() => {
+      const aoMudarRota = () => setCaminhoAtual(window.location.pathname);
+      window.addEventListener('popstate', aoMudarRota);
+      return () => window.removeEventListener('popstate', aoMudarRota);
+    }, []);
+
+    // Toda troca de `currentView` vem de um pushState; o caminho
+    // precisa acompanhar, senão a guarda decide sobre a rota anterior.
+    useEffect(() => {
+      if (typeof window !== 'undefined' && window.location) {
+        setCaminhoAtual(window.location.pathname);
+      }
+    }, [currentView]);
+
+    const decisaoRota = decidirRota(caminhoAtual, sessaoCarregando, sessao !== null);
+
+    useEffect(() => {
+      if (decisaoRota !== 'bloqueada') return;
+      // Rota privada sem sessão: o conteúdo privado não chega a
+      // renderizar, e a URL volta para a raiz guardando o destino, para
+      // a pessoa voltar a ele depois de entrar.
+      const destino = destinoDoLogin(
+        typeof window !== 'undefined' ? window.location.pathname : '/',
+        typeof window !== 'undefined' ? window.location.search : ''
+      );
+      window.history.replaceState({}, '', destino);
+      setCurrentView('home');
+      setCaminhoAtual('/');
+    }, [decisaoRota]);
 
   useEffect(() => {
     let vivo = true;
@@ -1603,6 +1651,18 @@ export default function App() {
             )}
           </section>
         </main>
+      ) : decisaoRota !== 'permitida' ? (
+        /* ───────────────────────────────────────────────────────────────
+           CARREGANDO OU BLOQUEADO — nada privado é renderizado aqui.
+
+           Enquanto a sessão não chega do servidor, a pessoa vê uma
+           espera. Se a sessão não vier, a URL já foi para a raiz pelo
+           efeito da guarda. Nos dois casos, o painel de exemplo — ou o
+           de outra pessoa — não chega a aparecer.
+           ─────────────────────────────────────────────────────────────── */
+        <div className="flex-1 flex items-center justify-center py-24">
+          <p className="text-sm text-slate-500">Conferindo sua sessão…</p>
+        </div>
       ) : currentView === 'editar_anuncio' ? (
         /* TELA /editar-anuncio */
         <main className="flex-1 w-full pb-16">

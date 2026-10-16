@@ -72,7 +72,7 @@ const duble = {
   auth: {
     signUp: async (a: any) => { chamadas.signUp.push(a); return respostas.signUp; },
     signInWithPassword: async (a: any) => { chamadas.signIn.push(a); return respostas.signIn; },
-    resetPasswordForEmail: async (a: any) => { chamadas.reset.push(a); return respostas.reset; },
+    resetPasswordForEmail: async (a: any, b: any) => { chamadas.reset.push([a, b]); return respostas.reset; },
     getUser: async () => { chamadas.getUser.push(1); return respostas.getUser; },
     signOut: async () => { chamadas.signOut++; return respostas.signOut; },
     onAuthStateChange: (cb: (evento: string, sessao: unknown) => void) => {
@@ -313,6 +313,88 @@ describe('sair', () => {
 });
 
 /* ──────────── o callback não pode chamar o Supabase ──────────── */
+
+/* ──────────── para onde o Supabase devolve a pessoa ──────────── */
+
+describe('redirect de confirmação e de redefinição', () => {
+  // Sem `window`, os helpers de origem caem no caminho de Node. Estes
+  // testes montam um `window` mínimo para exercitar o caminho real.
+  const comJanela = (origin: string) => {
+    Object.defineProperty(globalThis, 'window', {
+      value: { location: { origin, pathname: '/', search: '' } },
+      configurable: true,
+      writable: true,
+    });
+  };
+  const semJanela = () => {
+    Reflect.deleteProperty(globalThis as object, 'window');
+  };
+
+  test('o cadastro manda o e-mail de confirmação para a origem do app', async () => {
+    // Sem `emailRedirectTo`, o Supabase usa o Site URL do painel — que
+    // aponta para a PRODUÇÃO. Quem cadastrasse no Preview seria jogado
+    // para o site público, e pareceria que o cadastro não funcionou.
+    zerarChamadas();
+    respostas.signUp = { data: { session: null }, error: null };
+    comJanela('https://preview-exemplo.vercel.app');
+    try {
+      const { cadastrar } = await carregar();
+      await cadastrar('joao@empresa.com.br', 'trator123', 'João');
+      eq(chamadas.signUp.length, 1);
+      const redirect = chamadas.signUp[0].options.emailRedirectTo;
+      assert.ok(redirect, 'o cadastro precisa enviar emailRedirectTo');
+      eq(redirect, 'https://preview-exemplo.vercel.app/');
+    } finally {
+      semJanela();
+    }
+  });
+
+  test('a recuperação aponta para /redefinir-senha da mesma origem', async () => {
+    zerarChamadas();
+    respostas.reset = { error: null };
+    comJanela('https://preview-exemplo.vercel.app');
+    try {
+      const { recuperarSenha } = await carregar();
+      await recuperarSenha('joao@empresa.com.br');
+      eq(chamadas.reset.length, 1);
+      eq(chamadas.reset[0][1].redirectTo, 'https://preview-exemplo.vercel.app/redefinir-senha');
+    } finally {
+      semJanela();
+    }
+  });
+
+  test('confirmação e redefinição usam a MESMA origem', async () => {
+    // Se uma usasse o Site URL do painel e a outra a origem, a pessoa
+    // cairia em dois lugares diferentes. Este é o teste que pega isso.
+    zerarChamadas();
+    respostas.signUp = { data: { session: null }, error: null };
+    respostas.reset = { error: null };
+    comJanela('https://outro-preview.vercel.app');
+    try {
+      const { cadastrar, recuperarSenha } = await carregar();
+      await cadastrar('joao@empresa.com.br', 'trator123', 'João');
+      await recuperarSenha('joao@empresa.com.br');
+      const conf = chamadas.signUp[0].options.emailRedirectTo;
+      const redef = chamadas.reset[0][1].redirectTo;
+      assert.ok(conf.startsWith('https://outro-preview.vercel.app'));
+      assert.ok(redef.startsWith('https://outro-preview.vercel.app'));
+    } finally {
+      semJanela();
+    }
+  });
+
+  test('sem window, os helpers ainda produzem caminhos válidos', async () => {
+    // Nos testes do Node não existe `window`. Um `ReferenceError` aqui
+    // viraria uma mensagem de erro técnico para o usuário.
+    zerarChamadas();
+    respostas.reset = { error: null };
+    semJanela();
+    const { recuperarSenha } = await carregar();
+    const r = await recuperarSenha('joao@empresa.com.br');
+    eq(r.ok, true, 'não pode quebrar por falta de window');
+    eq(chamadas.reset[0][1].redirectTo, '/redefinir-senha');
+  });
+});
 
 describe('aoMudarSessao', () => {
   test('monta a sessão pelo argumento do callback, sem ir ao servidor', async () => {

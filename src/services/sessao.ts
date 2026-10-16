@@ -163,6 +163,30 @@ export const validarEmail = (email: string): string | null => {
 };
 
 /**
+ * A origem do app, para onde o Supabase devolve a pessoa.
+ *
+ * `window` não existe fora do browser — nos testes do Node, por exemplo.
+ * Sem este guarda, um `ReferenceError` aqui cairia no `catch` e viraria
+ * uma mensagem de erro técnico na tela.
+ */
+const origemDoApp = (): string => {
+  if (typeof window === 'undefined') return '';
+  return window.location?.origin ?? '';
+};
+
+/** Para onde a pessoa volta depois de confirmar o e-mail. */
+const destinoConfirmacao = (): string => {
+  const origem = origemDoApp();
+  return origem ? origem + '/' : '/';
+};
+
+/** Para onde a pessoa volta depois de trocar a senha. */
+const destinoRedefinicao = (): string => {
+  const origem = origemDoApp();
+  return origem ? origem + '/redefinir-senha' : '/redefinir-senha';
+};
+
+/**
  * Cadastra. Devolve `aguardandoConfirmacao: true` quando deu certo — e
  * isso é a coisa mais importante desse retorno: a conta existe, mas o
  * usuário ainda NÃO entrou. Sem sessão até clicar no link do e-mail.
@@ -196,6 +220,16 @@ export const cadastrar = async (
         // O nome vai para os metadados do usuário, e o trigger do banco
         // copia para `profiles`. É o mesmo caminho que a produção já usa.
         data: { full_name: nome.trim() },
+        // Onde a pessoa volta depois de confirmar o e-mail.
+        //
+        // Sem isto, o Supabase usa o Site URL configurado no painel —
+        // que aponta para a PRODUÇÃO. Quem cadastra conta no Preview
+        // seria jogado para o site público depois de confirmar, e
+        // pareceria que o cadastro não funcionou.
+        //
+        // O destino é a própria origem do app, sem caminho: confirmar o
+        // e-mail é o fim da jornada, e a pessoa entra pelo feed.
+        emailRedirectTo: destinoConfirmacao(),
       },
     });
 
@@ -285,17 +319,10 @@ export const recuperarSenha = async (email: string): Promise<{ ok: boolean; mens
   if (erroEmail) return { ok: false, mensagem: erroEmail };
 
   // `window` não existe fora do browser (nos testes, por exemplo).
-  // Sem este guarda, um `ReferenceError` aqui cairia no `catch` e
-  // devolveria uma mensagem de erro técnico para o usuário.
-  const origem =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : '';
-
   try {
     const { error } = await cli.auth.resetPasswordForEmail(
       email.trim(),
-      origem ? { redirectTo: origem + '/redefinir-senha' } : undefined
+      { redirectTo: destinoRedefinicao() }
     );
 
     if (error) {
