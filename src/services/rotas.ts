@@ -306,3 +306,86 @@ export const resolverPendente = (
     ? { tipo: 'executar', intencao }
     : { tipo: 'abrir-login', intencao };
 };
+
+/* ══════════════════════════════════════════════════════════════════
+   A GUARDA QUE ABRE O LOGIN
+   ══════════════════════════════════════════════════════════════════
+   O deep link para uma rota privada terminava na página inicial sem
+   abrir o login. A guarda reescrevia a URL e mandava a pessoa para o
+   feed, e o `?redirect=` ficava ali sem ninguém para lê-lo — porque o
+   `?redirect=` só é lido DEPOIS que a tela de login abriu e o login
+   aconteceu.
+
+   O resultado era o pior dos dois: a rota privada era bloqueada
+   (certo), mas a pessoa não recebia nenhum pedido de entrada. O botão
+   de perfil abria o login, o link do menu abria o login — só o
+   endereço digitado não. E o destino guardado na URL não voltava:
+   quem entrava pelo botão voltava para o feed, sem saber por quê.
+
+   Aqui a guarda faz o que a rota privada pede: barra a tela, devolve a
+   pessoa para a raiz GUARDANDO o destino, e abre o login. A ordem
+   importa — a URL primeiro, porque é dela que o `onEntrou` vai ler o
+   destino quando o login fechar.
+   ══════════════════════════════════════════════════════════════════ */
+
+/** O que a guarda faz com a rota. */
+export type AcaoGuarda =
+  /** Nada: rota pública, sessão válida, ou verificação em andamento. */
+  | { readonly tipo: 'nenhuma' }
+  /** Barra a tela, guarda o destino na URL e abre o login. */
+  | { readonly tipo: 'abrir-login'; readonly destino: string };
+
+/**
+ * O que a guarda decide.
+ *
+ * Só `'bloqueada'` abre o login — e `'bloqueada'` é exatamente "sessão
+ * já verificada, rota privada, sem sessão" (`decidirRota`).
+ *
+ * `'carregando'` NÃO abre nada: enquanto a verificação não termina não
+ * há nada a decidir, e abrir o modal agora jogaria o login por cima do
+ * feed de quem está logado e dá F5.
+ */
+export const decidirGuarda = (
+  decisao: DecisaoRota,
+  pathname: string,
+  busca = ''
+): AcaoGuarda => {
+  if (decisao !== 'bloqueada') return { tipo: 'nenhuma' };
+  return { tipo: 'abrir-login', destino: destinoDoLogin(pathname, busca) };
+};
+
+/**
+ * Os efeitos que a guarda produz, injetados.
+ *
+ * Mesma ideia de `__injetarCliente` em `sessao.ts`: o serviço recebe o
+ * que precisa fazer em vez de fabricar um dentro. Assim o teste observa
+ * o que a guarda fez — inclusive se o login abriu — sem navegador e sem
+ * reescrever módulo ESM.
+ */
+export interface EfeitosGuarda {
+  /** Reescreve a URL, com o destino guardado em `?redirect=`. */
+  trocarUrl: (destino: string) => void;
+  /** Volta para a tela inicial. */
+  voltarParaInicio: () => void;
+  /** Abre a tela de login. */
+  abrirLogin: () => void;
+};
+
+/**
+ * Aplica a guarda.
+ *
+ * A ordem é URL → tela → login: o `onEntrou` lê o destino da URL, e ele
+ * precisa estar lá quando o login fechar.
+ */
+export const aplicarGuarda = (
+  decisao: DecisaoRota,
+  pathname: string,
+  busca: string,
+  efeitos: EfeitosGuarda
+): void => {
+  const acao = decidirGuarda(decisao, pathname, busca);
+  if (acao.tipo !== 'abrir-login') return;
+  efeitos.trocarUrl(acao.destino);
+  efeitos.voltarParaInicio();
+  efeitos.abrirLogin();
+};

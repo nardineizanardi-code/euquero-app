@@ -37,6 +37,7 @@ import {
   podeRenderizar as podeVerViewPrivada,
   aoPedirNavegar,
   resolverPendente,
+  aplicarGuarda,
   rotaDaIntencao,
   buscaDaIntencao,
   destinoDaIntencao,
@@ -477,17 +478,27 @@ export default function App() {
     );
 
     useEffect(() => {
-      if (decisaoRota !== 'bloqueada') return;
       // Rota privada sem sessão: o conteúdo privado não chega a
-      // renderizar, e a URL volta para a raiz guardando o destino, para
-      // a pessoa voltar a ele depois de entrar.
-      const destino = urlDeBloqueio(
+      // renderizar, a URL volta para a raiz guardando o destino, e o
+      // login ABRE — para a pessoa entrar e voltar para onde foi.
+      //
+      // A ordem é URL → tela → login, e o destino vai na URL porque é
+      // de lá que o `onEntrou` lê, quando o login fechar.
+      aplicarGuarda(
+        decisaoRota,
         typeof window !== 'undefined' ? window.location.pathname : '/',
-        typeof window !== 'undefined' ? window.location.search : ''
+        typeof window !== 'undefined' ? window.location.search : '',
+        {
+          trocarUrl: (destino) => {
+            window.history.replaceState({}, '', destino);
+          },
+          voltarParaInicio: () => {
+            setCurrentView('home');
+            setCaminhoAtual('/');
+          },
+          abrirLogin: () => setAuthAberto(true),
+        }
       );
-      window.history.replaceState({}, '', destino);
-      setCurrentView('home');
-      setCaminhoAtual('/');
     }, [decisaoRota]);
 
   useEffect(() => {
