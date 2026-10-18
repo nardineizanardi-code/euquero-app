@@ -9,6 +9,7 @@ import { PushNotificationBanner, PushAlert } from './components/PushNotification
 import { NotificationDrawer } from './components/NotificationDrawer';
 import { NegotiationChatModal } from './components/NegotiationChatModal';
 import { ConversationsView } from './components/ConversationsView';
+import { MensagensRecebidas } from './components/MensagensRecebidas';
 import { Footer } from './components/Footer';
 import { PretendentesTinderPanel, PretendenteLead } from './components/PretendentesTinderPanel';
 import { VideoUnlockModal } from './components/VideoUnlockModal';
@@ -45,9 +46,14 @@ import {
 } from './services/rotas';
 import { updateProductMetaTags } from './utils/openGraphMeta';
 import { getPrimaryProductImage } from './utils/productImages';
+import {
+  useAnunciosBackend,
+  juntarAnuncios,
+} from './services/useAnunciosBackend';
 import { 
   Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare, 
-  Heart, ArrowRight, Eye, RefreshCw, Layers, SearchX, X 
+  Heart, ArrowRight, Eye, RefreshCw, Layers, SearchX, X,
+  AlertCircle
 } from 'lucide-react';
 
 import { ListingItem, MatchResult, ChatMessage, IntentType } from './types';
@@ -436,6 +442,64 @@ export default function App() {
   const [sessaoCarregando, setSessaoCarregando] = useState(true);
   const [authAberto, setAuthAberto] = useState(false);
 
+  /* ══════════════════════════════════════════════════════════════════
+     ANÚNCIOS REAIS — o backend
+
+     `listings` é a lista LOCAL (localStorage): ela não depende de
+     rede, de configuração ou de login, e é o que sustenta o app
+     quando o banco não está disponível.
+
+     `backend.publicos` é o que o banco entregou: a vitrine pública
+     (`public_listings`, sem sessão) e os anúncios do dono (sob RLS,
+     com sessão). A tela usa a UNIÃO das duas — o banco manda no
+     conflito de id, porque o id de verdade é o do banco.
+
+     Nada aqui apaga a lista local por falha: se o banco não
+     responder, o que já estava na tela continua na tela.
+     ══════════════════════════════════════════════════════════════════ */
+  const backend = useAnunciosBackend(sessao);
+
+  /* ══════════════════════════════════════════════════════════════════
+     MENSAGENS RECEBIDAS
+
+     O painel do vendedor. A contagem no menu do perfil é o que dá o
+     aviso de que alguém escreveu.
+
+     A carga é feita quando o painel ABRE, e não o tempo todo: são uma
+     consulta por abertura, e ninguem precisa de uma notificacao
+     piscando. O que o Supabase nao entrega vira lista
+     vazia — a tela diz "nenhuma mensagem", que e a verdade do que o
+     banco respondeu.
+     ══════════════════════════════════════════════════════════════════ */
+  const [painelMensagensAberto, setPainelMensagensAberto] = useState(false);
+  const [contadorMensagens, setContadorMensagens] = useState(0);
+
+  const carregarMensagensRecebidas = useCallback(async () => {
+    const lista = await backend.mensagensRecebidas();
+    setContadorMensagens(lista.length);
+    return lista;
+  }, [backend]);
+
+  // A contagem no menu do perfil é atualizada quando a sessão muda.
+  useEffect(() => {
+    if (!sessao) {
+      setContadorMensagens(0);
+      return;
+    }
+    let vivo = true;
+    backend
+      .mensagensRecebidas()
+      .then((lista) => {
+        if (vivo) setContadorMensagens(lista.length);
+      })
+      .catch(() => {
+        if (vivo) setContadorMensagens(0);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [sessao, backend]);
+
     /* ══════════════════════════════════════════════════════════════════
        GUARDA DE ROTAS
 
@@ -541,6 +605,30 @@ export default function App() {
   const [activeChatMatch, setActiveChatMatch] = useState<MatchResult | null>(null);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
   const [isPretendentesOpen, setIsPretendentesOpen] = useState(false);
+
+  /* ══════════════════════════════════════════════════════════════════
+     DEEP LINK DE ANÚNCIO — `?produto=ID`
+
+     O link que o vendedor compartilha pelo WhatsApp carrega o id do
+     anúncio: `?produto=<id>`. Quando o anúncio é do BANCO, esse id
+     não está no localStorage de quem recebeu o link — está no Supabase.
+
+     A busca é ASSÍNCRONA e o efeito de deep link roda uma vez só, no
+     mount. Se ele decidisse "não encontrado" ali, um link válido
+     mostraria erro para quem acabou de clicar nele.
+
+     Por isso o id fica guardado em estado, e a resolução acontece
+     quando a lista chega:
+
+       - o anúncio apareceu → abre o modal, e o id é consumido;
+       - a lista chegou e o anúncio não está nela → "não encontrado";
+       - ainda está carregando → não se decide nada.
+
+     E o id é CONSUMIDO uma vez. Sem isso, qualquer re-render com o
+     anúncio ainda na lista reabriria o modal — e um clique em "salvar"
+     no editor reabriria a página do anúncio por baixo.
+     ══════════════════════════════════════════════════════════════════ */
+  const [idDoAnuncioNaUrl, setIdDoAnuncioNaUrl] = useState<string | null>(null);
 
   // Pretendentes Leads
   const [pretendentes, setPretendentes] = useState<PretendenteLead[]>(ALL_PRETENDENTES_DATA);
@@ -754,6 +842,13 @@ export default function App() {
         setCurrentView('editar_anuncio');
       }
 
+      // O id do anúncio vem na query. Ele NÃO é resolvido aqui: a
+      // lista pode ainda não ter chegado. A resolução é o efeito
+      // abaixo, que espera a lista.
+      const paramsIniciais = new URLSearchParams(window.location.search);
+      const produto = paramsIniciais.get('produto');
+      if (produto) setIdDoAnuncioNaUrl(produto);
+
       const handlePopState = () => {
         const path = window.location.pathname;
         if (path === '/meus-anuncios' || path === '/painel-vendedor') {
@@ -874,6 +969,26 @@ export default function App() {
 
   const handleDeleteListing = (itemOrId: ListingItem | string) => {
     const id = typeof itemOrId === 'string' ? itemOrId : itemOrId.id;
+
+    // ══════════════════════════════════════════════════════════════
+    // ANÚNCIO DO DONO, NO BANCO
+    //
+    // A exclusão no banco só acontece para quem é o DONO — e o
+    // "dono" aqui vem da leitura sob RLS (`backend.meus`), não de
+    // qualquer campo que veio do cliente. Sem essa checagem, o botão
+    // de excluir apareceria para o anúncio de outra pessoa.
+    //
+    // A remoção local acontece nos DOIS casos: no do anúncio do banco
+    // (para ele sumir da tela) e no do anúncio local (o caminho
+    // antigo). A falha do banco não desfaz a remoção local — a
+    // pessoa já pediu para apagar, e o anúncio sumiu da tela dela.
+    // ══════════════════════════════════════════════════════════════
+    if (backend.ehMeu(id)) {
+      void backend.excluir(id).catch(() => {
+        /* já removido da tela; o erro fica visível em `backend.erro` */
+      });
+    }
+
     setListings((prev) => {
       const filtered = prev.filter((it) => it.id !== id && it.id.slice(-8) !== id.slice(-8));
       try {
@@ -909,6 +1024,25 @@ export default function App() {
   };
 
   const handleSaveEditedListing = (updatedItem: ListingItem) => {
+    // ══════════════════════════════════════════════════════════════
+    // EDIÇÃO NO BANCO — SÓ DO DONO
+    //
+    // `ehMeu` pergunta ao conjunto que veio da leitura sob RLS. Se o
+    // anúncio não está nele, a edição é só local: o app não tem como
+    // saber que a pessoa é a dona, e a RLS recusaria a escrita de
+    // qualquer jeito.
+    //
+    // A escrita local acontece sempre, nos dois casos. O `catch` é
+    // deliberado: se o banco recusar, o anúncio continua como estava
+    // na tela — o erro fica visível em `backend.erro`, e a edição
+    // local não se perde.
+    // ══════════════════════════════════════════════════════════════
+    if (backend.ehMeu(updatedItem.id)) {
+      void backend.editar(updatedItem.id, updatedItem).catch(() => {
+        /* o erro fica visível em `backend.erro` */
+      });
+    }
+
     setListings((prev) => {
       const updated = prev.map((it) => (it.id === updatedItem.id || it.id.slice(-8) === updatedItem.id.slice(-8)) ? updatedItem : it);
       if (!updated.some((it) => it.id === updatedItem.id || it.id.slice(-8) === updatedItem.id.slice(-8))) {
@@ -954,7 +1088,63 @@ export default function App() {
     setConvidadosCadastrados((prev) => [newGuestId, ...prev]);
   };
 
+  // ══════════════════════════════════════════════════════════════════
+  // AS DUAS LISTAS QUE A TELA USA
+  // ══════════════════════════════════════════════════════════════════
+  // O FEED mostra a união da lista local com a vitrine pública do banco.
+  // O PAINEL "MEUS ANÚNCIOS" mostra a união da lista local com os
+  // anúncios do DONO — nunca com a vitrine pública, senão o painel do
+  // vendedor passaria a listar os anúncios dos outros.
+  //
+  // O id do banco manda no conflito: é o id que a view devolve e o que
+  // a RLS reconhece como pertencendo a alguém.
+  const listingsCombinados = useMemo(
+    () => juntarAnuncios(listings, backend.publicos),
+    [listings, backend.publicos]
+  );
+
+  const listingsMeus = useMemo(
+    () => juntarAnuncios(listings, backend.meus),
+    [listings, backend.meus]
+  );
+
+  /* ══════════════════════════════════════════════════════════════════
+     RESOLVER O ANÚNCIO QUE VEIO DA URL
+
+     A lista muda várias vezes: a local carrega no mount, a do banco
+     chega depois. O efeito abaixo roda a cada mudança, e decide só
+     quando tem o que decidir:
+
+       - o anúncio está na lista → abre o modal e consome o id;
+       - a lista chegou inteira e o anúncio não está → "não encontrado".
+
+     "A lista chegou inteira" é `!backend.carregando`. Enquanto o banco
+     responde, o efeito não diz nada — é a diferença entre um link
+     inválido e um link válido cujo anúncio ainda não chegou.
+     ══════════════════════════════════════════════════════════════════ */
+  useEffect(() => {
+    if (!idDoAnuncioNaUrl) return;
+
+    const encontrado = listingsCombinados.find(
+      (it) => it.id === idDoAnuncioNaUrl
+    );
+    if (encontrado) {
+      setSelectedItemForDetail(sanitizePublicProduct(encontrado));
+      setIdDoAnuncioNaUrl(null);
+      return;
+    }
+
+    if (!backend.carregando) {
+      setProductNotFound(true);
+      setIdDoAnuncioNaUrl(null);
+    }
+  }, [idDoAnuncioNaUrl, listingsCombinados, backend.carregando]);
+
   // Background match calculation
+  //
+  // Continua sobre a lista LOCAL, de propósito. O matching está fora do
+  // escopo desta entrega: o anúncio que vem do banco entra no FEED, mas
+  // ainda não participa do cruzamento de compatibilidade.
   const backgroundMatches = useMemo(() => {
     return findMatches(listings);
   }, [listings]);
@@ -999,6 +1189,40 @@ export default function App() {
       } catch (e) {}
       return updated;
     });
+
+    // ══════════════════════════════════════════════════════════════
+    // SALVAR NO BANCO
+    //
+    // A gravação local acima acontece SEMPRE e primeiro: é o que
+    // sustenta o app sem backend e o que mantém o fluxo de WhatsApp
+    // intacto — o anúncio já existe na tela e no link compartilhável
+    // antes de qualquer rede.
+    //
+    // Com sessão e com backend configurado, o anúncio vai também para
+    // o banco. Quando o banco devolve o registro, o id local é
+    // TROCADO pelo id do banco: são o mesmo anúncio, e dois ids
+    // fariam o mesmo anúncio aparecer duas vezes no feed.
+    //
+    // Sem sessão, o anúncio fica só local. Não é erro — é o
+    // comportamento de quem ainda não criou conta, e o app continua
+    // funcionando por completo.
+    // ══════════════════════════════════════════════════════════════
+    if (sessao && backend.configurado) {
+      void backend
+        .salvar(newItem)
+        .then((salvo) => {
+          setListings((prev) => {
+            const trocado = prev.map((it) => (it.id === newItem.id ? salvo : it));
+            try {
+              localStorage.setItem('euquero_listings_v8', JSON.stringify(trocado));
+            } catch (e) {}
+            return trocado;
+          });
+        })
+        .catch(() => {
+          /* o anúncio segue local; o erro fica visível em `backend.erro` */
+        });
+    }
 
     // Se for novo pedido de compra no QUERO COMPRAR (Grátis), atualiza pedidosReais para o contador 501+
     if (newListingData.intent === 'buy') {
@@ -1067,6 +1291,22 @@ export default function App() {
   };
 
   // Open in-app chat for item
+  /* ══════════════════════════════════════════════════════════════════
+     CONTATO REAL — a mensagem vai para o banco
+
+     O que acontecia antes: o botão "Falar com Vendedor" abria o chat
+     LOCAL DE DEMONSTRAÇÃO. A mensagem existia só no navegador de
+     quem abriu, e o vendedor nunca recebia nada. O telefone público
+     é vazio — e é para ser: a vitrine nao expoe `user_phone`.
+
+     Agora, com sessao e backend configurado, a mensagem vai para a
+     tabela `messages`, e o vendedor a ve em "Mensagens Recebidas". O
+     telefone continua privado dos dois lados.
+
+     Sem sessao, a mensagem NAO e enviada — e a tela diz isso, em vez
+     de fingir que a conversa comecou. A abertura do chat local
+     continua, porque ela serve para demonstrar o fluxo.
+     ══════════════════════════════════════════════════════════════════ */
   const handleStartChatForItem = (item: ListingItem) => {
     const existing = backgroundMatches.find(
       (m) => m.sellerListing.id === item.id || m.buyerDemand.id === item.id
@@ -1096,6 +1336,38 @@ export default function App() {
     }
 
     setActiveChatMatch(matchToOpen);
+
+    // A mensagem REAL. Ela vai em segundo plano: o chat abre na hora,
+    // e o resultado chega logo depois. Se falhar, o aviso aparece — e o
+    // chat local continua sendo o chat de sempre.
+    if (sessao && backend.configurado && item.intent === 'sell') {
+      void backend
+        .contatar(
+          item,
+          `Ola! Tenho interesse no anuncio "${item.title}". Podemos conversar?`
+        )
+        .then(() => {
+          setActivePushAlert({
+            id: `alert-contato-${Date.now()}`,
+            title: '📨 Mensagem enviada',
+            body: 'O vendedor recebeu seu contato. O telefone dele continua privado.',
+            targetItem: item,
+            timestamp: 'Agora'
+          });
+        })
+        .catch((e) => {
+          setActivePushAlert({
+            id: `alert-contato-erro-${Date.now()}`,
+            title: '⚠️ Contato nao enviado',
+            body:
+              e instanceof Error
+                ? e.message
+                : 'Nao foi possivel enviar a mensagem. Verifique sua conta e tente de novo.',
+            targetItem: item,
+            timestamp: 'Agora'
+          });
+        });
+    }
   };
 
   const handleSendMessage = (matchId: string, text: string, proposalPrice?: number) => {
@@ -1126,18 +1398,18 @@ export default function App() {
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const chip of CATEGORY_CHIPS) {
-      counts[chip.id] = listings.filter((item) => isItemInCategory(item, chip.id)).length;
+      counts[chip.id] = listingsCombinados.filter((item) => isItemInCategory(item, chip.id)).length;
     }
     return counts;
-  }, [listings]);
+  }, [listingsCombinados]);
 
   // Itens filtrados pela categoria selecionada (Isolamento total por categoria)
   const categoryListings = useMemo(() => {
     if (!selectedCategory || selectedCategory === 'all') {
-      return listings;
+      return listingsCombinados;
     }
-    return listings.filter((item) => isItemInCategory(item, selectedCategory));
-  }, [listings, selectedCategory]);
+    return listingsCombinados.filter((item) => isItemInCategory(item, selectedCategory));
+  }, [listingsCombinados, selectedCategory]);
 
   // Itens finais para exibição (Categoria + Intenção + Busca + Geografia [📍 Só SC | 🇧🇷 Brasil todo | 📍 Perto de mim])
   const filteredListings = useMemo(() => {
@@ -1308,6 +1580,8 @@ export default function App() {
         setSearchQuery={setSearchQuery}
         onOpenPretendentes={() => setIsPretendentesOpen(true)}
         onOpenMeusAnuncios={navigateToMeusAnuncios}
+        onOpenMensagens={() => setPainelMensagensAberto(true)}
+        mensagensRecebidasCount={contadorMensagens}
         sessao={sessao}
         onAbrirAuth={() => setAuthAberto(true)}
         onSair={handleSair}
@@ -1332,6 +1606,34 @@ export default function App() {
         onClearAlerts={() => setAlertsHistory([])}
         onStartChat={(item) => handleStartChatForItem(item)}
       />
+
+      {/* ══════════════════════════════════════════════════════════
+          AVISO DO BACKEND
+
+          O que deu errado com o banco: a foto que nao subiu, a
+          gravacao que nao confirmou, a mensagem que a politica
+          barrou. Aparece aqui porque o app nao pode engolir isso e
+          fingir que deu tudo certo — a pessoa precisa saber que o
+          anuncio dela ficou sem foto.
+          ══════════════════════════════════════════════════════════ */}
+      {backend.erro && (
+        <div className="mx-auto max-w-3xl px-4 pt-3">
+          <div className="flex items-start gap-2.5 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-900 leading-relaxed flex-1">
+              {backend.erro}
+            </p>
+            <button
+              type="button"
+              onClick={() => backend.setBackendErro(null)}
+              className="text-amber-500 hover:text-amber-800 transition-colors shrink-0"
+              aria-label="Fechar aviso"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MAIN VIEW CONTENT */}
       {currentView === 'home' ? (
@@ -1783,7 +2085,7 @@ export default function App() {
         <main className="flex-1 w-full pb-16">
           <EditListingView
             listingId={editingListingId}
-            allListings={listings}
+            allListings={listingsMeus}
             onSave={handleSaveEditedListing}
             onDelete={handleDeleteListing}
             onBack={navigateToMeusAnuncios}
@@ -1802,7 +2104,7 @@ export default function App() {
             onViewProductDetail={(item) => setSelectedItemForDetail(sanitizePublicProduct(item))}
             onEditListing={(item) => navigateToEditListing(item)}
             onDeleteListing={(item) => handleDeleteListing(item)}
-            allListings={listings}
+            allListings={listingsMeus}
           />
         </main>
       ) : (
@@ -1873,7 +2175,7 @@ export default function App() {
         onEdit={(it) => navigateToEditListing(it)}
         onDelete={(it) => handleDeleteListing(it)}
         onTogglePause={(it) => handleTogglePauseListing(it)}
-        allListings={listings}
+        allListings={listingsCombinados}
         onTenhoEssaMaquina={handleTenhoEssaMaquina}
         onSelectProcura={(it) => setSelectedItemForDetail(sanitizePublicProduct(it))}
       />
@@ -1911,6 +2213,19 @@ export default function App() {
         onAcceptProposal={handleAcceptProposal}
       />
 
+      {/* MENSAGENS RECEBIDAS — o outro lado do contato */}
+      <MensagensRecebidas
+        aberto={painelMensagensAberto}
+        onFechar={() => setPainelMensagensAberto(false)}
+        carregar={carregarMensagensRecebidas}
+        tituloDoAnuncio={(listingId) => {
+          const achado =
+            listingsCombinados.find((l) => l.id === listingId) ??
+            listingsMeus.find((l) => l.id === listingId);
+          return achado?.title ?? 'Anuncio do EuQuero';
+        }}
+      />
+
       {/* PAINEL DE PRETENDENTES ESTILO TINDER */}
       <PretendentesTinderPanel
         isOpenAsModal={isPretendentesOpen}
@@ -1930,7 +2245,7 @@ export default function App() {
       <AntiBloqueioWhatsAppModal
         isOpen={isAntiBloqueioOpen}
         onClose={() => setIsAntiBloqueioOpen(false)}
-        sellerItems={listings.filter((it) => it.intent === 'sell')}
+        sellerItems={listingsCombinados.filter((it) => it.intent === 'sell')}
         selectedItem={antiBloqueioItem}
         onSimulateInviteBuyer={handleSimulateInviteBuyer}
       />
@@ -1990,6 +2305,42 @@ export default function App() {
                 <span>Continuar com o alcance atual</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ANÚNCIO DO LINK QUE NÃO EXISTE MAIS */}
+      {productNotFound && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl border border-slate-200 relative">
+            <button
+              type="button"
+              onClick={() => setProductNotFound(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-4">
+              <SearchX className="w-6 h-6 stroke-[2.2]" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900 mb-1.5">Anúncio não encontrado</h3>
+            <p className="text-sm text-slate-500 mb-5 leading-relaxed">
+              Este anúncio não está disponível. Ele pode ter sido removido pelo
+              vendedor ou o link pode estar incompleto.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setProductNotFound(false);
+                navigateToHome();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-[#00875A] hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm transition-colors cursor-pointer"
+            >
+              <span>Ver anúncios</span>
+            </button>
           </div>
         </div>
       )}
