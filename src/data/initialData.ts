@@ -1,4 +1,4 @@
-import { ListingItem } from '../types';
+import type { ListingItem } from '../types';
 
 export const INITIAL_LISTINGS: ListingItem[] = [
   // =========================================================================
