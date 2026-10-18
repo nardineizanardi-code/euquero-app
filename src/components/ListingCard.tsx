@@ -46,6 +46,30 @@ export const ListingCard: React.FC<ListingCardProps> = ({
               </span>
             </div>
 
+              {/* ══════════════════════════════════════════════════════
+                SELO DE DEMONSTRAÇÃO
+
+                O feed mistura duas coisas que não podem se parecer:
+                peça de vitrine (o INITIAL_LISTINGS, que vem no
+                bundle) e anúncio de gente. Sem este selo, alguém
+                vê "Escavadeira CAT 320D em Paulínia" e não tem como
+                saber se aquilo é uma oferta de verdade.
+
+                Ele fica no CANTO OPOSTO do card, ao lado do selo
+                VENDO/COMPRO, e diz "Demonstração" — não um símbolo
+                que exige legenda.
+                ══════════════════════════════════════════════════════ */}
+            {item.origem === 'demonstracao' && (
+              <div className="absolute top-3.5 right-3.5 z-20">
+                <span
+                  className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase shadow-xs bg-slate-900/85 text-white border border-slate-600/50 backdrop-blur-xs"
+                  title="Anúncio de demonstração — não é uma oferta real"
+                >
+                  Demonstração
+                </span>
+              </div>
+            )}
+
             <div className="absolute bottom-2.5 left-3.5 right-3.5 z-20 flex items-center justify-between text-xs font-semibold text-slate-700">
               <span className="bg-white/95 backdrop-blur-xs px-2.5 py-1 rounded-lg flex items-center gap-1 border border-slate-200/80 shadow-2xs">
                 <MapPin className="w-3.5 h-3.5 text-[#00A86B] shrink-0" />
@@ -150,6 +174,30 @@ export const ListingCard: React.FC<ListingCardProps> = ({
               </span>
             ) : null}
           </div>
+
+              {/* ══════════════════════════════════════════════════════
+                SELO DE DEMONSTRAÇÃO
+
+                O feed mistura duas coisas que não podem se parecer:
+                peça de vitrine (o INITIAL_LISTINGS, que vem no
+                bundle) e anúncio de gente. Sem este selo, alguém
+                vê "Escavadeira CAT 320D em Paulínia" e não tem como
+                saber se aquilo é uma oferta de verdade.
+
+                Ele fica no CANTO OPOSTO do card, ao lado do selo
+                VENDO/COMPRO, e diz "Demonstração" — não um símbolo
+                que exige legenda.
+                ══════════════════════════════════════════════════════ */}
+            {item.origem === 'demonstracao' && (
+              <div className="absolute top-3.5 right-3.5 z-20">
+                <span
+                  className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-wider uppercase shadow-xs bg-slate-900/85 text-white border border-slate-600/50 backdrop-blur-xs"
+                  title="Anúncio de demonstração — não é uma oferta real"
+                >
+                  Demonstração
+                </span>
+              </div>
+            )}
 
           <div className="absolute bottom-2.5 left-3.5 right-3.5 z-20 flex items-center justify-between text-white text-xs drop-shadow-sm">
             <div className="flex items-center gap-1 font-semibold bg-slate-900/70 backdrop-blur-xs px-2.5 py-1 rounded-lg">

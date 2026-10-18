@@ -11,6 +11,10 @@ interface HeaderProps {
   setSearchQuery: (q: string) => void;
   onOpenPretendentes: () => void;
   onOpenMeusAnuncios?: () => void;
+  /** Abre as mensagens que chegaram para os anúncios da pessoa. */
+  onOpenMensagens?: () => void;
+  /** Quantas mensagens chegaram e ainda não foram lidas. */
+  mensagensRecebidasCount?: number;
   /** Sessão real do Supabase. `null` = ninguém conectado. */
   sessao?: { uid: string; email: string; nome: string } | null;
   onAbrirAuth: () => void;
@@ -30,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onOpenPretendentes,
   onOpenMeusAnuncios,
+  onOpenMensagens,
+  mensagensRecebidasCount = 0,
   sessao,
   onAbrirAuth,
   onSair,
@@ -164,6 +170,28 @@ export const Header: React.FC<HeaderProps> = ({
                   >
                     <LogOut className="w-4 h-4" />
                     <span>Sair</span>
+                  </button>
+                )}
+
+                {/* MENSAGENS RECEBIDAS — o outro lado do contato. Só
+                    existe com sessão: sem conta, não há anúncio, e sem
+                    anúncio não há quem escreva. */}
+                {sessao && onOpenMensagens && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEqMenuOpen(false);
+                      onOpenMensagens();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-800 hover:bg-orange-50 hover:text-[#FF6B00] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <MessageSquare className="w-4 h-4 text-[#00A86B]" />
+                    <span className="flex-1">Mensagens Recebidas</span>
+                    {mensagensRecebidasCount > 0 && (
+                      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#00A86B] text-white text-[10px] font-black flex items-center justify-center">
+                        {mensagensRecebidasCount}
+                      </span>
+                    )}
                   </button>
                 )}
 
