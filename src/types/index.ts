@@ -63,6 +63,20 @@ export interface CategorySpec {
 export interface ListingItem {
   id: string;
   intent: IntentType; // 'buy' = Quero Comprar, 'sell' = Quero Vender
+  /**
+   * DE ONDE VEM ESTE ANÚNCIO.
+   *
+   * O app tem duas origens de announcements e elas não podem se
+   * misturar sem aviso: a de DEMONSTRAÇÃO (o `INITIAL_LISTINGS`, que
+   * vem no bundle) e a REAL (veio do banco, ou foi criado pela
+   * pessoa). Sem esta marca, o feed mostra peça de vitrine do mesmo
+   * jeito que mostra anúncio de gente, e o contador não distingue
+   * "12 anúncios" de "12 anúncios, 10 de mentira".
+   *
+   * `undefined` é tratado como 'real' — um item que não foi marcado
+   * veio do caminho normal, que é o do usuário.
+   */
+  origem?: 'demonstracao' | 'real';
   title: string;
   category: string; // 'maquinas', 'veiculos', 'imoveis', 'agro', 'equipamentos'
   subcategoryType: string; // Ex: 'Escavadeira Hidráulica', 'Retroescavadeira', 'Caminhonete'
