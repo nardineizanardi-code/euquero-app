@@ -115,6 +115,15 @@ export interface Sessao {
   uid: string;
   email: string;
   nome: string;
+  /**
+   * UF (sigla) do perfil do usuário.
+   *
+   * Vem do `user_metadata.state` quando o cadastro/auth do Supabase
+   * expõe esse dado. NÃO é coluna de `profiles` ainda — o schema atual
+   * não tem UF. É um campo opcional: a ficha do comprador usa quando
+   * existe e cai para o dropdown de UF quando não existe.
+   */
+  state?: string;
 }
 
 export type ErroCadastro =
@@ -366,11 +375,21 @@ export const sessaoDoUsuario = (u: {
   user_metadata?: Record<string, unknown>;
 } | null | undefined): Sessao | null => {
   if (!u) return null;
-  return {
+  const md = u.user_metadata ?? {};
+  const stateBruto = (md.state as string | undefined)?.trim().toUpperCase() ?? '';
+  const out: Sessao = {
     uid: u.id,
     email: u.email ?? '',
-    nome: (u.user_metadata?.full_name as string | undefined)?.trim() || 'Cliente',
+    nome: (md.full_name as string | undefined)?.trim() || 'Cliente',
   };
+  // Só aceitamos a UF se tiver 2 letras (sigla BR). Não colocamos
+  // `state: undefined` no objeto: os testes existentes comparam com
+  // deep-equal estrito, e o consumidor trata `state` ausente como
+  // "sem UF do perfil".
+  if (/^[A-Z]{2}$/.test(stateBruto)) {
+    out.state = stateBruto;
+  }
+  return out;
 };
 
 /**
@@ -452,11 +471,9 @@ export const aoMudarSessao = (cb: (s: Sessao | null) => void): (() => void) => {
       return;
     }
     const u = sessaoAtual.user;
-    cb({
-      uid: u.id,
-      email: u.email ?? '',
-      nome: (u.user_metadata?.full_name as string | undefined)?.trim() || 'Cliente',
-    });
+    // Mesmo construtor do `sessaoDoUsuario` para que o primeiro
+    // carregamento e o callback devolvam exatamente a mesma coisa.
+    cb(sessaoDoUsuario(u));
   });
 
   return () => data.subscription.unsubscribe();

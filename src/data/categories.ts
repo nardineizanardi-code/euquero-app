@@ -1,4 +1,4 @@
-import { CategorySpec, ListingItem } from '../types';
+import type { CategorySpec, ListingItem } from '../types';
 
 /**
  * ============================================================================

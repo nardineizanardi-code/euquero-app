@@ -6,6 +6,7 @@ import {
 import { ListingItem } from '../types';
 import { CardImageWithFallback } from './CardImageWithFallback';
 import { formatVendendoEm } from '../utils/geoDistance';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface MeusAnunciosViewProps {
   onBack: () => void;
@@ -269,7 +270,7 @@ export const MeusAnunciosView: React.FC<MeusAnunciosViewProps> = ({
                       </div>
 
                       <div className="mt-2 text-base sm:text-lg font-black font-mono text-slate-900">
-                        R$ {listing.price.toLocaleString('pt-BR')}
+                        {precoDoCard(listing.price, { sufixo: 'R$ ' })}
                       </div>
                     </div>
                   </div>

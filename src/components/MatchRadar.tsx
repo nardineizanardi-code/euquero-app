@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { MatchResult, ListingItem } from '../types';
 import { MatchCard } from './MatchCard';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface MatchRadarProps {
   matches: MatchResult[];
@@ -47,7 +48,7 @@ export const MatchRadar: React.FC<MatchRadarProps> = ({
     const buyer = match.buyerDemand;
     const seller = match.sellerListing;
     const msg = encodeURIComponent(
-      `Olá ${seller.userName}! Encontrei seu anúncio no Eu Quero: "${seller.title}" pelo valor de R$ ${seller.price.toLocaleString('pt-BR')}. Nosso perfil tem interesse e foi classificado com ${match.score}% de compatibilidade! Gostaria de mais detalhes sobre o equipamento.`
+      `Olá ${seller.userName}! Encontrei seu anúncio no Eu Quero: "${seller.title}" pelo valor de ${precoDoCard(seller.price, { sufixo: 'R$ ' })}. Nosso perfil tem interesse e foi classificado com ${match.score}% de compatibilidade! Gostaria de mais detalhes sobre o equipamento.`
     );
     const cleanPhone = seller.userPhone.replace(/\D/g, '');
     window.open(`https://wa.me/55${cleanPhone}?text=${msg}`, '_blank');
@@ -293,7 +294,7 @@ export const MatchRadar: React.FC<MatchRadarProps> = ({
                       <div className="flex justify-between">
                         <span className="text-slate-600">Orçamento Limite:</span>
                         <span className="font-bold text-emerald-800 font-mono tabular-nums">
-                          Até R$ {buyer.price.toLocaleString('pt-BR')}
+                          {precoDoCard(buyer.price, { sufixo: 'Até R$ ' })}
                         </span>
                       </div>
                     </div>
@@ -342,7 +343,7 @@ export const MatchRadar: React.FC<MatchRadarProps> = ({
                       <div className="flex justify-between">
                         <span className="text-slate-600">Preço Pedido:</span>
                         <span className="font-bold text-slate-900 font-mono tabular-nums">
-                          R$ {seller.price.toLocaleString('pt-BR')}
+                          {precoDoCard(seller.price, { sufixo: 'R$ ' })}
                         </span>
                       </div>
                     </div>

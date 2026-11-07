@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { MatchResult, ChatMessage } from '../types';
 import { mascararTelefone } from '../utils/productLinks';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface NegotiationChatModalProps {
   match: MatchResult | null;
@@ -96,7 +97,7 @@ export const NegotiationChatModal: React.FC<NegotiationChatModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 line-clamp-1">
-                Ativo: <strong>{seller.title}</strong> · R$ {seller.price.toLocaleString('pt-BR')}
+                Ativo: <strong>{seller.title}</strong> · {precoDoCard(seller.price, { sufixo: 'R$ ' })}
               </p>
             </div>
           </div>
@@ -144,7 +145,7 @@ export const NegotiationChatModal: React.FC<NegotiationChatModalProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-slate-500">Valor Anunciado:</span>
             <span className="font-bold text-slate-900 font-mono tabular-nums">
-              R$ {seller.price.toLocaleString('pt-BR')}
+              {precoDoCard(seller.price, { sufixo: 'R$ ' })}
             </span>
           </div>
         </div>

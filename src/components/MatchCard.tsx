@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { MatchResult, ListingItem } from '../types';
 import { CardImageWithFallback } from './CardImageWithFallback';
 import { getPrimaryProductImage } from '../utils/productImages';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface MatchCardProps {
   match: MatchResult;
@@ -87,7 +88,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
 
   // 5. Preço: "R$ 520.000" (18px, peso 700)
   const formattedPrice = useMemo(() => {
-    return `R$ ${seller.price.toLocaleString('pt-BR')}`;
+    return precoDoCard(seller.price, { sufixo: 'R$ ' });
   }, [seller.price]);
 
   // 6. Reasons[] formatados com ícones

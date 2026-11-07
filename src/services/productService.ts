@@ -245,6 +245,28 @@ const asBool = (v: unknown): boolean | undefined =>
 /** `numeric` volta do PostgREST como string; o app quer number. */
 const asPrice = (v: unknown): number => asNum(v) ?? 0;
 
+/**
+ * mini-1.2d: preço que pode ser AUSENTE.
+ *
+ * A coluna `price` do banco é `not null default 0`, então a procura sem
+ * orçamento é gravada como 0 (é o que a coluna aceita). O `asPrice`
+ * antigo convertia o que viesse de volta em 0 também — e aí a procura
+ * voltava a mostrar "R$ 0,00", que é o que o 1.2d quer eliminar.
+ *
+ * A distinção: um anúncio de VENDA com preço 0 significa "a combinar" e
+ * continua sendo 0 (é um dado). Uma PROCURA sem orçamento é 0 no banco
+ * por causa do `not null`, e volta como null na aplicação.
+ *
+ * O sinal é o `intent`: a procura é `buy`.
+ */
+const asPrecoAnunciante = (v: unknown, intent?: string | null): number | null => {
+  const n = asNum(v);
+  if (n === null || n === undefined) return null;
+  // Procura com 0 no banco = orçamento não informado.
+  if (n === 0 && intent === 'buy') return null;
+  return n;
+};
+
 const asImages = (v: unknown): string[] | undefined => {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
   if (typeof v === 'string' && v.trim()) {
@@ -338,11 +360,17 @@ export const publicRowToItem = (row: ListingRow): ListingItem | null => {
     model: asText(row.model) || undefined,
     yearMin: asNum(row.year_min),
     yearMax: asNum(row.year_max),
-    year: asNum(row.year),
-    hoursUsed: asNum(row.hours_used),
+    // mini-1.2e: a leitura desfaz o mapeamento do insert. Para a
+    // PROCURA, `year` volta como `minYear` e `hours_used` como
+    // `maxHoursUsed` — o limite que a pessoa pediu. Para o anúncio de
+    // venda, continuam sendo os dados reais da máquina.
+    year: intent === 'buy' ? undefined : asNum(row.year),
+    hoursUsed: intent === 'buy' ? undefined : asNum(row.hours_used),
+    minYear: intent === 'buy' ? asNum(row.year) : undefined,
+    maxHoursUsed: intent === 'buy' ? asNum(row.hours_used) : undefined,
     mileageKm: asNum(row.mileage_km),
     powerHp: asNum(row.power_hp),
-    price: asPrice(row.price),
+    price: asPrecoAnunciante(row.price, row.intent),
     budgetRange: normalizeBudget(row.budget_range),
     priceNegotiable: asBool(row.price_negotiable) ?? false,
     acceptsTrade: asBool(row.accepts_trade) ?? false,
@@ -392,11 +420,15 @@ export const privateRowToItem = (row: ListingRow): ListingItem => {
     model: asText(row.model) || undefined,
     yearMin: asNum(row.year_min),
     yearMax: asNum(row.year_max),
-    year: asNum(row.year),
-    hoursUsed: asNum(row.hours_used),
+    // mini-1.2e: mesma semântica do read público. Para a PROCURA,
+    // `year` é o ano mínimo pedido e `hours_used` o teto de horas.
+    year: intent === 'buy' ? undefined : asNum(row.year),
+    hoursUsed: intent === 'buy' ? undefined : asNum(row.hours_used),
+    minYear: intent === 'buy' ? asNum(row.year) : undefined,
+    maxHoursUsed: intent === 'buy' ? asNum(row.hours_used) : undefined,
     mileageKm: asNum(row.mileage_km),
     powerHp: asNum(row.power_hp),
-    price: asPrice(row.price),
+    price: asPrecoAnunciante(row.price, row.intent),
     budgetRange: normalizeBudget(row.budget_range),
     priceNegotiable: asBool(row.price_negotiable) ?? false,
     acceptsTrade: asBool(row.accepts_trade) ?? false,
@@ -515,8 +547,16 @@ export const payloadDoAnuncio = (
     model: asText(item.model) || null,
     year_min: asNum(item.yearMin) ?? null,
     year_max: asNum(item.yearMax) ?? null,
-    year: asNum(item.year) ?? null,
-    hours_used: asNum(item.hoursUsed) ?? null,
+    // mini-1.2e: mesma semântica do insert. Para a PROCURA, o ano
+    // mínimo e o teto de horas vão para `year` e `hours_used`.
+    year:
+      (normalizeIntent(item.intent) ?? 'sell') === 'buy'
+        ? (asNum(item.minYear) ?? asNum(item.year) ?? null)
+        : (asNum(item.year) ?? null),
+    hours_used:
+      (normalizeIntent(item.intent) ?? 'sell') === 'buy'
+        ? (asNum(item.maxHoursUsed) ?? asNum(item.hoursUsed) ?? null)
+        : (asNum(item.hoursUsed) ?? null),
     mileage_km: asNum(item.mileageKm) ?? null,
     power_hp: asNum(item.powerHp) ?? null,
     price: asPrice(item.price),
@@ -575,7 +615,8 @@ export interface PublicProductData {
   categoria: string;
   marca?: string;
   modelo?: string;
-  preco: number;
+  /** mini-1.2d: null = a procura não tem preço informado. */
+  preco: number | null;
   cidade: string;
   estado: string;
   fotos?: string[];
@@ -665,7 +706,12 @@ export const sanitizePublicProduct = (item: ListingItem): ListingItem => {
  * que já está em memória (localStorage, state do React).
  * Só o que a vitrine pública pode ter: sem cpf, sem userPhone, sem ownerId.
  */
-const itemToPublicRow = (item: ListingItem): ListingRow => ({
+/**
+ * mini-1.2e: exportado para que o teste possa verificar o MAPEAMENTO
+ * (não só o que ele produz em produção). O insert real e o read usam
+ * esta mesma função.
+ */
+export const itemToPublicRow = (item: ListingItem): ListingRow => ({
   id: item.id,
   intent: item.intent,
   title: item.title,
@@ -676,11 +722,32 @@ const itemToPublicRow = (item: ListingItem): ListingRow => ({
   model: item.model ?? null,
   year_min: item.yearMin ?? null,
   year_max: item.yearMax ?? null,
-  year: item.year ?? null,
-  hours_used: item.hoursUsed ?? null,
+  // mini-1.2e: a PROCURA usa as MESMAS colunas que o anúncio de
+  // venda, com outra semântica.
+  //
+  //   intent 'sell': `year` é o ano da máquina, `hours_used` é o
+  //                  horímetro real. (não muda nada)
+  //   intent 'buy':  `year` é o ANO MÍNIMO pedido, `hours_used` é o
+  //                  TETO DE HORAS pedido.
+  //
+  // Sem isso os critérios da busca se perdiam ao gravar: a ficha
+  // mandava `minYear`/`maxHoursUsed`, e o insert lia `item.year`/
+  // `item.hoursUsed` — que a procura não preenche.
+  year: item.intent === 'buy'
+    ? (item.minYear ?? item.year ?? null)
+    : (item.year ?? null),
+  hours_used: item.intent === 'buy'
+    ? (item.maxHoursUsed ?? item.hoursUsed ?? null)
+    : (item.hoursUsed ?? null),
   mileage_km: item.mileageKm ?? null,
   power_hp: item.powerHp ?? null,
-  price: item.price,
+    // mini-1.2d: a coluna `price` é `not null default 0`. A procura
+    // sem orçamento tem price null NA APLICAÇÃO (para a tela não
+    // mostrar "R$ 0,00" e para o filtro não tratar 0 como teto),
+    // mas o insert precisa de um número — 0 é o "não informado" do
+    // banco. A distinção entre "sem preço" e "preço zero" fica na
+    // aplicação, via `orcamentoMax`/`price` do ListingItem.
+    price: item.price ?? 0,
   price_negotiable: item.priceNegotiable ?? null,
   budget_range: item.budgetRange ?? null,
   accepts_trade: item.acceptsTrade ?? null,
@@ -722,7 +789,7 @@ export const fetchPublicProductFromSupabase = async (
     categoria: found.category,
     marca: found.brand,
     modelo: found.model,
-    preco: found.price,
+    preco: found.price ?? null,
     cidade: found.locationCity,
     estado: found.locationState,
     fotos: found.images,

@@ -92,8 +92,40 @@ export interface ListingItem {
   areaM2?: number; // Metragem total m²
   bedrooms?: number; // Número de quartos
   powerHp?: number; // Potência em CV para Agronegócio
-  price: number; // Preço ofertado ou orçamento máximo do comprador
+    /**
+     * Preço ofertado (venda) ou orçamento máximo (procura).
+     *
+     * mini-1.2d: pode ser null. Para a PROCURA, null significa "a
+     * pessoa não informou orçamento" — e null é diferente de 0:
+     * 0 é um número falso que barra a busca e aparece como "R$ 0,00".
+     * A coluna no banco é `not null default 0`, então o insert da
+     * procura segue mandando 0 por baixo; o que a tela e os filtros
+     * veem é null. Para a VENDA, o preço é obrigatório e sempre vem
+     * preenchido.
+     */
+    price: number | null;
   budgetRange?: BudgetRangeType; // Faixa de orçamento qualificada
+  /**
+   * mini-1.2c: teto que a pessoa escreveu no campo "Orçamento até".
+   * É o que filtra a tela de resultados — diferente de `price`, que é
+   * o valor da própria demanda. Ausente = a pessoa não preencheu, e
+   * então o orçamento NÃO filtra.
+   */
+  orcamentoMax?: number | null;
+  /**
+   * mini-1.2d: horas MÁXIMAS que a pessoa pediu ("até X horas").
+   * É o filtro de horímetro da tela de resultados. Ausente = a
+   * pessoa não pediu limite de horas, e então não filtra.
+   *
+   * `hoursUsed` é o horímetro do ANÚNCIO à venda — o valor que o
+   * filtro compara. Este aqui é o limite pedido na procura.
+   */
+  maxHoursUsed?: number | null;
+  /**
+   * mini-1.2d: ano MÍNIMO que a pessoa pediu ("a partir de X").
+   * Ausente = não filtra por ano.
+   */
+  minYear?: number | null;
   priceNegotiable: boolean;
   locationState: string; // Ex: 'SP', 'MG', 'PR'
   locationCity: string;

@@ -1,5 +1,6 @@
 import { ListingItem, MatchResult } from '../types';
 import { generateDisplayProductLink } from './productLinks';
+import { precoDoCard } from '../services/filtrosBusca';
 
 /**
  * SISTEMA ELO - REGRA AUTOMÁTICA EXATA SOLICITADA:
@@ -39,10 +40,15 @@ export function checkExactEloMatch(
   }
 
   // 4. Preço vendedor <= preço comprador + 10%
-  const maxPriceAllowed = buyer.price > 0 ? buyer.price * 1.10 : Infinity;
-  const priceMatch = seller.price <= maxPriceAllowed;
+  // mini-1.2d: `price` pode ser null na procura (a pessoa nao informou
+  // orcamento). null = sem teto - o mesmo que 0 significava antes, mas
+  // null nao e zero, e zero aparecia na tela como 'R$ 0,00'.
+  const precoBuyer = buyer.price ?? 0;
+  const precoSeller = seller.price ?? 0;
+  const maxPriceAllowed = precoBuyer > 0 ? precoBuyer * 1.10 : Infinity;
+  const priceMatch = precoSeller <= maxPriceAllowed;
   if (priceMatch) {
-    reasons.push(`Preço de R$ ${seller.price.toLocaleString('pt-BR')} dentro do teto +10%`);
+    reasons.push(`Preco de R$ ${precoSeller.toLocaleString('pt-BR')} dentro do teto +10%`);
   }
 
   // 5. Geografia compatível:
@@ -69,10 +75,10 @@ export function checkExactEloMatch(
   const machineName = seller.title || seller.subcategoryType || 'Máquina';
   const cityName = seller.locationCity || 'sua região';
   const buyerName = buyer.userName || 'Comprador';
-  const priceFormatted = seller.price.toLocaleString('pt-BR');
+  const priceFormatted = precoDoCard(seller.price, { sufixo: '' });
 
   // Notificar comprador: "🔥 Achamos! [Máquina] em [Cidade]/[Estado] por R$ [Preço] - Ver 4 fotos e vídeo: [link produto]"
-  const buyerNotification = `🔥 Achamos! ${machineName} em ${cityName}/${sState || 'SC'} por R$ ${priceFormatted} - Ver 4 fotos e vídeo: ${productDisplayLink}`;
+  const buyerNotification = `🔥 Achamos! ${machineName} em ${cityName}/${sState || 'SC'} por ${priceFormatted} - Ver 4 fotos e vídeo: ${productDisplayLink}`;
 
   // Notificar vendedor: "💰 Nardinei, tem comprador para sua [Máquina]! [Nome] de [Cidade] quer - Chamar no chat"
   const sellerNotification = `💰 ${seller.userName || 'Nardinei'}, tem comprador para sua ${machineName}! ${buyerName} de ${buyer.locationCity || cityName} quer - Chamar no chat`;
@@ -147,15 +153,17 @@ export function calculateMatchScore(
   }
 
   // Price compatibility
-  if (buyer.price > 0 && seller.price > 0) {
-    if (seller.price <= buyer.price) {
+  const precoBuyer = buyer.price ?? 0;
+  const precoSeller = seller.price ?? 0;
+  if (precoBuyer > 0 && precoSeller > 0) {
+    if (precoSeller <= precoBuyer) {
       score += 15;
       reasons.push('Abaixo do orçamento');
-    } else if (seller.price <= buyer.price * 1.15) {
+    } else if (precoSeller <= precoBuyer * 1.15) {
       score += 8;
-      gaps.push(`Preço R$ ${seller.price.toLocaleString('pt-BR')} com margem negociável acima do teto`);
+      gaps.push(`Preço R$ ${precoSeller.toLocaleString('pt-BR')} com margem negociável acima do teto`);
     } else {
-      gaps.push(`Preço R$ ${seller.price.toLocaleString('pt-BR')} excede o orçamento`);
+      gaps.push(`Preço R$ ${precoSeller.toLocaleString('pt-BR')} excede o orçamento`);
     }
   }
 

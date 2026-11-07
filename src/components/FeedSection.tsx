@@ -41,8 +41,8 @@ export const FeedSection: React.FC<FeedSectionProps> = ({
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === 'price_asc') return a.price - b.price;
-      if (sortBy === 'price_desc') return b.price - a.price;
+      if (sortBy === 'price_asc') return (a.price ?? 0) - (b.price ?? 0);
+      if (sortBy === 'price_desc') return (b.price ?? 0) - (a.price ?? 0);
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 

@@ -9,6 +9,7 @@ import { BuyerMachineSearchIcon } from './BuyerMachineSearchIcon';
 import { MachineVideoPlayer } from './MachineVideoPlayer';
 import { formatVendendoEm } from '../utils/geoDistance';
 import { getOptimizedImageUrl } from '../utils/imageOptimizer';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface AdCardProps {
   item: ListingItem;
@@ -142,7 +143,7 @@ export const AdCard: React.FC<AdCardProps> = ({
               </span>
               <div className="flex items-baseline justify-between mt-0.5">
                 <span className="text-xl sm:text-2xl font-black text-[#00A86B] font-mono tabular-nums">
-                  Até R$ {item.price.toLocaleString('pt-BR')}
+                  {precoDoCard(item.price, { sufixo: 'Até R$ ' })}
                 </span>
                 {item.yearMin && item.yearMax && (
                   <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-mono">
@@ -309,7 +310,7 @@ export const AdCard: React.FC<AdCardProps> = ({
                 Preço Solicitado
               </span>
               <span className="text-xl sm:text-2xl font-black text-slate-900 font-mono tabular-nums tracking-tight">
-                R$ {item.price.toLocaleString('pt-BR')}
+                {precoDoCard(item.price, { sufixo: 'R$ ' })}
               </span>
             </div>
 

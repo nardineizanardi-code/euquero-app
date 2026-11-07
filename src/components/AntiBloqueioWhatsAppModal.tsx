@@ -10,6 +10,7 @@ import {
   generateDisplayInviteLink, 
   getShareableInviteUrl 
 } from '../utils/productLinks';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface AntiBloqueioWhatsAppModalProps {
   isOpen: boolean;
@@ -171,7 +172,7 @@ export const AntiBloqueioWhatsAppModal: React.FC<AntiBloqueioWhatsAppModalProps>
                   >
                     {sellerItems.map((item) => (
                       <option key={item.id} value={item.id}>
-                        {item.title} ({item.locationCity}) - R$ {item.price.toLocaleString('pt-BR')}
+                        {item.title} ({item.locationCity}) - {precoDoCard(item.price, { sufixo: 'R$ ' })}
                       </option>
                     ))}
                   </select>

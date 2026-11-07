@@ -14,7 +14,11 @@ import { getPrimaryProductImage, toAbsoluteHttpsImageUrl } from './productImages
 export interface ProductMetaInput {
   id?: string;
   title?: string;
-  price?: number;
+  /**
+   * mini-1.2d: null = a procura não tem preço informado. Zero seria um
+   * número falso que aparece como "R$ 0,00" na prévia do link.
+   */
+  price?: number | null;
   description?: string;
   images?: string[];
   fotos?: string[];

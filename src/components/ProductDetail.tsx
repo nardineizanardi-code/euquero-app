@@ -14,6 +14,7 @@ import { formatVendendoEm } from '../utils/geoDistance';
 import { updateProductMetaTags } from '../utils/openGraphMeta';
 import { isProductOwner } from '../utils/ownerAuth';
 import { getPrimaryProductImage } from '../utils/productImages';
+import { precoDoCard } from '../services/filtrosBusca';
 
 export interface ProductDetailProps {
   item: ListingItem;
@@ -88,7 +89,10 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   };
 
   const handleShareWhatsApp = () => {
-    const priceText = item.price ? ` - R$ ${item.price.toLocaleString('pt-BR')}` : '';
+    // mini-1.2e: preço 0 ou ausente não vira "R$ 0" no texto
+    // compartilhado — não há valor a anunciar.
+    const priceText =
+      item.price && item.price > 0 ? ` - R$ ${item.price.toLocaleString('pt-BR')}` : '';
     const cityText = item.locationCity ? ` (${item.locationCity})` : '';
     const shareText = `${item.title}${priceText}${cityText}: ${shareableProductUrl}`;
     const zapUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`;
@@ -267,7 +271,12 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 {isBuyer ? 'Orçamento Previsto' : 'Preço à Vista'}
               </span>
               <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono tabular-nums tracking-tight">
-                R$ {item.price.toLocaleString('pt-BR')}
+                {/* mini-1.2d: uma procura sem orçamento mostra 'A combinar',
+                    nunca 'R$ 0,00'. Zero é um número falso. */}
+                {/* mini-1.2e: preço ausente (null OU zero) vira
+                    'A combinar'. Zero num anúncio de venda significa
+                    'a combinar' — é um dado, não um erro. */}
+                {precoDoCard(item.price, { sufixo: 'R$ ' })}
               </span>
             </div>
 

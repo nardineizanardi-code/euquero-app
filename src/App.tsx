@@ -60,6 +60,17 @@ import { ListingItem, MatchResult, ChatMessage, IntentType } from './types';
 import { INITIAL_LISTINGS, INITIAL_CHATS } from './data/initialData';
 import { CATEGORIES, CATEGORY_CHIPS, isItemInCategory } from './data/categories';
 import { findMatches } from './utils/matchingEngine';
+import { termoCasaNoAnuncio } from './services/fichaBusca';
+import {
+  prepararBusca,
+  aplicarFiltrosNaTela,
+  precoDoCard,
+  calcularAfrouxamento,
+  aplicarFiltro,
+  dicaDoEmptyState,
+  TEXTO_SEM_RESULTADO,
+  type FiltrosAplicados,
+} from './services/filtrosBusca';
 
 // Base de pretendentes qualificados por categoria (Estilo Tinder / App de Encontro)
 const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
@@ -670,6 +681,11 @@ export default function App() {
 
   // Filtro de Geografia do Topo (Ponto 5 do Prompt): [ 📍 Só SC | 🇧🇷 Brasil todo | 📍 Perto de mim ]
   const [geoScopeFilter, setGeoScopeFilter] = useState<'so_sc' | 'brasil_todo' | 'perto_de_mim'>('so_sc');
+  // mini-1.2c: os filtros que a ficha de busca trouxe. É null quando a
+  // pessoa não veio de uma ficha — aí a Home usa os filtros dela
+  // (selectedCategory, geoScopeFilter, searchQuery) como sempre. Quando
+  // a ficha preencheu, estes prevalencecem sobre os antigos.
+  const [filtrosDaFicha, setFiltrosDaFicha] = useState<FiltrosAplicados | null>(null);
 
   // Comprador salvo para EloMatch direto (Carlos Mendes por padrão)
   const [compradorSalvo, setCompradorSalvo] = useState<{
@@ -1273,7 +1289,7 @@ export default function App() {
         id: `alert-${Date.now()}`,
         title: isBuyerCreating ? '🔥 Achamos!' : '💰 Tem Comprador!',
         body: isBuyerCreating
-          ? `${sellerItem.title} em ${sellerItem.locationCity} por R$ ${sellerItem.price.toLocaleString('pt-BR')} - Ver 4 fotos e vídeo: ${productLink}`
+          ? `${sellerItem.title} em ${sellerItem.locationCity} por ${precoDoCard(sellerItem.price, { sufixo: 'R$ ' })} - Ver 4 fotos e vídeo: ${productLink}`
           : `Nardinei, tem comprador para sua ${sellerItem.title}! ${buyerItem.userName} quer em ${buyerItem.locationCity} - Chamar no chat`,
         targetItem: targetCounterpart,
         timestamp: 'Agora'
@@ -1288,6 +1304,148 @@ export default function App() {
     }
 
     return newMatches;
+  };
+
+  // mini-1.1: caminho ASSÍNCRONO do COMPRADOR — espera o Supabase
+  // confirmar antes de devolver { ok: true }. O WizardModal
+  // await-a esta Promise e só fecha a ficha em cima do ok=true.
+  // Falha devolve { ok: false, mensagem } e a ficha permanece
+  // aberta para a pessoa tentar de novo.
+  //
+  // Diferente do `handleCreateListing` (síncrono, usado pelo
+  // vendedor), este caminho:
+  //  1. espelha a demanda no feed local (feedback visual);
+  //  2. AWAIT-a o `backend.salvar` (Supabase);
+  //  3. só devolve ok=true quando o banco confirma.
+  // Se o backend não está configurado, ou se não há sessão,
+  // a Zapia pediu: "Não considere gravação apenas local como
+  // sucesso". Devolvemos erro claro.
+  /**
+   * mini-1.2c: distância aproximada até a pessoa, pelo nome da cidade.
+   *
+   * Antes isto era um `.map()` colado no meio da vitrine. O caminho dos
+   * filtros da ficha precisa da mesma distância, e copiar o bloco faria
+   * as duas começarem a divergir — o mesmo defeito que a mini-1.2
+   * corrigiu com `termoCasaNoAnuncio`. Uma função só.
+   */
+  const distanciaDaCidade = (locationCity: string | undefined): number | undefined => {
+    const cityNorm = (locationCity || '').toLowerCase();
+    if (cityNorm.includes('joinville')) return 30; // 30km de Araquari/SC
+    if (cityNorm.includes('jaragua')) return 38;
+    if (cityNorm.includes('blumenau')) return 95;
+    if (cityNorm.includes('paulinia')) return 18;
+    return undefined;
+  };
+
+  const handleCreateBuyerListing = async (
+    newListingData: Omit<ListingItem, 'id' | 'createdAt' | 'status'>
+  ): Promise<{ ok: boolean; mensagem?: string }> => {
+    const rawId = (newListingData as any).id;
+    const newItem: ListingItem = {
+      ...newListingData,
+      id: rawId || `${newListingData.intent}-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      images: newListingData.images ?? []
+    };
+
+    // mini-1.2: o termo que leva à tela de resultados é o que a
+    // pessoa digitou em Marca/Modelo. Se ela escreveu só a marca
+    // ("Sinomach"), é isso que vai para a busca — sem modelo
+    // inventado.
+    const termoDaBusca =
+      [newListingData.brand, newListingData.model]
+        .map((x) => (x ?? '').trim())
+        .filter(Boolean)
+        .join(' ') ||
+      newListingData.title ||
+      '';
+
+    // mini-1.2: a demanda é espelhada no feed local para dar retorno
+    // visual enquanto o banco responde, e TIRADA de lá se o banco
+    // recusar. Sem isso, uma tentativa que falhasse deixava a demanda
+    // órfã na lista — e a tentativa seguinte criava uma segunda
+    // cópia, duplicando a procura da mesma pessoa.
+    setListings((prev) => {
+      const updated = [newItem, ...prev];
+      try {
+        localStorage.setItem('euquero_listings_v8', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+
+    /** Desfaz a espelhagem: some com a demanda e reescreve o localStorage. */
+    const desfazerEspelho = () => {
+      setListings((prev) => {
+        const semEssa = prev.filter((it) => it.id !== newItem.id);
+        try {
+          localStorage.setItem('euquero_listings_v8', JSON.stringify(semEssa));
+        } catch (e) {}
+        return semEssa;
+      });
+    };
+
+    if (sessao && backend.configurado) {
+      try {
+        const salvo = await backend.salvar(newItem);
+        setListings((prev) => {
+          const trocado = prev.map((it) => (it.id === newItem.id ? salvo : it));
+          try {
+            localStorage.setItem('euquero_listings_v8', JSON.stringify(trocado));
+          } catch (e) {}
+          return trocado;
+        });
+        // mini-1.2: leva o termo para a tela de resultados. É a
+        // marca/modelo que a pessoa digitou, que é o que casa com
+        // os anúncios à venda.
+        setSearchQuery(termoDaBusca);
+        setIntentFilter('sell');
+        // mini-1.2c: a ficha passa a ASSUMIR o controle dos filtros.
+        // Antes a pessoa chegava na vitrine com a categoria que estivesse
+        // na Home e o geográfico no default 'so_sc' — quem pedia "Brasil
+        // todo" pela ficha via só Santa Catarina.
+        // mini-1.2d: a preparação dos filtros mora no serviço, para
+        // que o teste do fluxo real possa verificar o comportamento sem
+        // montar React. Aqui só aplicamos o que ela devolveu.
+        const preparacao = prepararBusca({
+          category: newListingData.category,
+          brand: newListingData.brand,
+          model: newListingData.model,
+          title: newListingData.title,
+          geoPreference: newListingData.geoPreference,
+          locationState: newListingData.locationState,
+          minYear: newListingData.minYear ?? null,
+          maxHoursUsed: newListingData.maxHoursUsed ?? null,
+          condition: newListingData.condition ?? null,
+          orcamentoMax: newListingData.orcamentoMax ?? null,
+        });
+        // mini-1.2d: a aplicação dos filtros é UMA FUNÇÃO do serviço.
+        // O App e o teste chamam a mesma — assim o teste verifica o
+        // comportamento de verdade, e não só que a linha existe.
+        aplicarFiltrosNaTela(preparacao, {
+          setFiltrosDaFicha,
+          setSelectedCategory,
+          setGeoScopeFilter,
+          setSearchQuery,
+          setIntentFilter,
+        });
+        return { ok: true };
+      } catch (e) {
+        desfazerEspelho();
+        const mensagem =
+          e instanceof Error ? e.message : 'Erro ao salvar busca. Tente novamente.';
+        return { ok: false, mensagem };
+      }
+    }
+    // mini-1.2: sem backend ou sem sessão, a gravação local não
+    // conta como sucesso — e a espelhagem também é desfeita, para
+    // não deixar busca pela metade na lista.
+    desfazerEspelho();
+    const semBackend =
+      !backend.configurado
+        ? 'não há backend configurado; contate o suporte'
+        : 'é preciso estar logado para salvar a busca no banco';
+    return { ok: false, mensagem: semBackend };
   };
 
   // Open in-app chat for item
@@ -1413,6 +1571,25 @@ export default function App() {
 
   // Itens finais para exibição (Categoria + Intenção + Busca + Geografia [📍 Só SC | 🇧🇷 Brasil todo | 📍 Perto de mim])
   const filteredListings = useMemo(() => {
+    // mini-1.2c: se a pessoa veio da ficha de busca, os filtros que ela
+    // escolheu prevalencecem. A categoria da ficha vence a categoria que
+    // estava na Home — o Dono pediu isso explicitamente.
+    if (filtrosDaFicha) {
+      const filtrados = aplicarFiltro(
+        listingsCombinados as unknown as Parameters<typeof aplicarFiltro>[0],
+        filtrosDaFicha,
+        {
+          casarCategoria: (item, categoria) =>
+            isItemInCategory(item as unknown as ListingItem, categoria),
+          casarTermo: (termo, item) => termoCasaNoAnuncio(termo, item),
+        }
+      );
+      return (filtrados as unknown as ListingItem[]).map((item) => ({
+        ...item,
+        distanceKm: distanciaDaCidade(item.locationCity),
+      }));
+    }
+
     return categoryListings
       .filter((item) => {
         if (intentFilter !== 'all' && item.intent !== intentFilter) return false;
@@ -1425,31 +1602,18 @@ export default function App() {
           }
         }
 
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          const str = `${item.title} ${item.subcategoryType} ${item.brand || ''} ${item.locationCity}`.toLowerCase();
-          if (!str.includes(q)) return false;
-        }
+        // mini-1.2: o filtro da tela de resultados usa a MESMA função
+        // que a ficha usa para conferir o que gravou (`termoCasaNoAnuncio`).
+        // Antes eram dois `includes` independentes — e este nem olhava
+        // `model`, então uma busca por modelo não encontrava nada.
+        if (searchQuery.trim() && !termoCasaNoAnuncio(searchQuery, item)) return false;
         return true;
       })
-      .map((item) => {
-        const cityNorm = item.locationCity.toLowerCase();
-        let distanceKm: number | undefined = undefined;
-        if (cityNorm.includes('joinville')) {
-          distanceKm = 30; // 30km de Araquari/SC
-        } else if (cityNorm.includes('jaragua')) {
-          distanceKm = 38;
-        } else if (cityNorm.includes('blumenau')) {
-          distanceKm = 95;
-        } else if (cityNorm.includes('paulinia')) {
-          distanceKm = 18;
-        }
-        return {
-          ...item,
-          distanceKm
-        };
-      });
-  }, [categoryListings, intentFilter, searchQuery, geoScopeFilter]);
+      .map((item) => ({
+        ...item,
+        distanceKm: distanciaDaCidade(item.locationCity)
+      }));
+  }, [categoryListings, intentFilter, searchQuery, geoScopeFilter, filtrosDaFicha, listingsCombinados]);
 
   // Informações do Card Preto "Painel do Vendedor" dinâmicas por categoria
   const activeChipConfig = CATEGORY_CHIPS.find((c) => c.id === selectedCategory) || CATEGORY_CHIPS[0];
@@ -1924,10 +2088,76 @@ export default function App() {
             {/* FEED VERTICAL ESTILO PERFIL DE NAMORO (TINDER) - UM EM CIMA DO OUTRO DA MESMA CATEGORIA */}
             {filteredListings.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-[24px] border border-slate-200 shadow-xs max-w-xl mx-auto">
-                <p className="font-bold text-slate-800 text-base">Nenhum ativo encontrado nesta categoria.</p>
-                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                  Seja o primeiro a publicar sua procura ou colocar seu ativo para vender!
-                </p>
+                {/* mini-1.2c: quando a pessoa veio da ficha, o texto diz
+                    o que aconteceu com a busca dela e o que destrava.
+                    Sem a ficha, segue a mensagem geral de sempre. */}
+                {filtrosDaFicha ? (
+                  <>
+                    <p className="font-bold text-slate-800 text-base">
+                      {TEXTO_SEM_RESULTADO}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                      {dicaDoEmptyState(filtrosDaFicha)}
+                    </p>
+                    <div className="mt-4 flex justify-center gap-2 flex-wrap">
+                      {/* "só do meu estado" travou tudo → oferecer Brasil */}
+                      {filtrosDaFicha.escopoGeo === 'so_sc' && (
+                        <button
+                          onClick={() => {
+                            setFiltrosDaFicha({
+                              ...filtrosDaFicha,
+                              escopoGeo: 'brasil_todo' as const,
+                              ufAlvo: null,
+                            });
+                            setGeoScopeFilter('brasil_todo');
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-[#FF6B00] text-white font-bold text-xs cursor-pointer shadow-sm hover:bg-orange-600"
+                        >
+                          Ver todo o Brasil
+                        </button>
+                      )}
+                      {/* mini-1.2e: o botão de afrouxar aparece
+                          quando QUALQUER um dos três filtros está
+                          ativo, e o rótulo diz exatamente quais vão
+                          sair. A lógica mora no serviço
+                          (calcularAfrouxamento) para poder ser
+                          testada — cada combinação de filtros ativos
+                          precisa produzir o rótulo certo e remover
+                          SÓ aquilo.
+
+                          O bug anterior: a condição exigia
+                          `orcamentoMax` E outro filtro, então "só
+                          ano" e "só horas" não mostravam o botão. */}
+                      {calcularAfrouxamento(filtrosDaFicha) && (
+                        <button
+                          onClick={() => {
+                            const r = calcularAfrouxamento(filtrosDaFicha);
+                            if (r) setFiltrosDaFicha(r.filtros);
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-slate-700 text-white font-bold text-xs cursor-pointer shadow-sm hover:bg-slate-800"
+                        >
+                          {calcularAfrouxamento(filtrosDaFicha)!.rotulo}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setFiltrosDaFicha(null);
+                          setSearchQuery('');
+                        }}
+                        className="px-4 py-2.5 rounded-xl bg-[#00A86B] text-white font-bold text-xs cursor-pointer shadow-sm hover:bg-emerald-600"
+                      >
+                        Ver todas as máquinas
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-bold text-slate-800 text-base">Nenhum ativo encontrado nesta categoria.</p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                      Seja o primeiro a publicar sua procura ou colocar seu ativo para vender!
+                    </p>
+                  </>
+                )}
                 <div className="mt-4 flex justify-center gap-2">
                   <button
                     onClick={() => handleOpenWizard('buy')}
@@ -2201,6 +2431,8 @@ export default function App() {
         onClose={() => setIsWizardOpen(false)}
         initialIntent={wizardIntent}
         onSubmitListing={handleCreateListing}
+        onSubmitBuyerListing={handleCreateBuyerListing}
+        ufPadrao={sessao?.state}
         onViewMatches={() => {}}
       />
 

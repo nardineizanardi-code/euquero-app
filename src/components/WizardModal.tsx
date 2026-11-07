@@ -3,19 +3,68 @@ import {
   X, Check, ShieldCheck, Video, Copy, QrCode, CreditCard, 
   Sparkles, CheckCircle2, ArrowRight, MessageSquare, ExternalLink,
   Lock, Unlock, ArrowLeft, Camera, Plus, AlertCircle, Play,
-  Tractor, Truck, Container, Construction, Upload, Trash2
+  Tractor, Truck, Container, Construction, Upload, Trash2, Search
 } from 'lucide-react';
 import { IntentType, ListingItem, MatchResult } from '../types';
 import { generateDisplayProductLink, getShareableProductUrl, slugify, mascararTelefone } from '../utils/productLinks';
 import { getPrimaryProductImage } from '../utils/productImages';
+import {
+  parsearCidadeUf,
+  tituloDaBusca,
+  descricaoDaBusca,
+  ufDeAlcance,
+  UFS_BRASIL,
+  juntar,
+  marcaDe,
+  modeloDe,
+  vistaDaFicha,
+    tentarSalvarBusca,
+  type GeoAlcance,
+} from '../services/fichaBusca';
+import {
+  // mini-1.2d: os filtros corretos da busca.
+  checarAlcance,
+  precoDaBusca,
+  anoMinimoDaBusca,
+  horasMaximasDaBusca,
+  // mini-1.2e: a UF do perfil só vale se for uma das 27.
+  ufDoPerfilValida,
+  precisaSelecionarUf,
+} from '../services/filtrosBusca';
 
 export type FrotaCategoryType = 'linha_amarela' | 'agricola' | 'caminhao' | 'implementos';
+
+/**
+ * O que o App.tsx devolve ao gravar uma busca do comprador.
+ *  - `ok: true`  → gravado no Supabase, pode fechar a ficha.
+ *  - `ok: false` → erro; a ficha permanece aberta e mostra
+ *                   a `mensagem` ao usuário.
+ */
+export interface ResultadoSalvarBusca {
+  ok: boolean;
+  mensagem?: string;
+}
 
 interface WizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialIntent: IntentType;
+  /** Caminho do VENDEDOR. Síncrono, retorna os matches locais. */
   onSubmitListing: (item: Omit<ListingItem, 'id' | 'createdAt' | 'status'>) => MatchResult[];
+  /**
+   * Caminho do COMPRADOR (mini-1.1). É Promise porque a ficha
+   * precisa AGUARDAR a confirmação do Supabase antes de fechar.
+   * Quem chama (App.tsx) é quem decide o que fazer com sessão
+   * e backend: aqui só esperamos o resultado.
+   */
+  onSubmitBuyerListing: (item: Omit<ListingItem, 'id' | 'createdAt' | 'status'>) => Promise<ResultadoSalvarBusca>;
+  /**
+   * UF (sigla) do perfil do comprador, se o cadastro expõe esse
+   * dado. Quando existe, é o default do "Só do meu estado".
+   * Se `undefined`, a ficha mostra um dropdown de UF para a
+   * pessoa escolher (sem cair em 'BR' automaticamente).
+   */
+  ufPadrao?: string;
   onViewMatches?: (matches: MatchResult[]) => void;
   onOpenChatWithSeller?: (item: ListingItem) => void;
 }
@@ -25,6 +74,8 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   onClose,
   initialIntent,
   onSubmitListing,
+  onSubmitBuyerListing,
+  ufPadrao,
 }) => {
   const [intent, setIntent] = useState<IntentType>(initialIntent);
 
@@ -67,6 +118,15 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [buyerName, setBuyerName] = useState<string>('');
   const [buyerPhone, setBuyerPhone] = useState<string>('');
   const [buyerCity, setBuyerCity] = useState<string>('');
+    /**
+     * mini-1.2d: condição escolhida EXPLICITAMENTE pela pessoa.
+     *
+     * Antes a ficha fixava `condition: 'usado'` na procura — uma
+     * escolha automática que a pessoa nunca fez, e que escondia
+     * anúncios novos. Agora: null = sem preferência (mostra novos e
+     * usados); 'novo' ou 'usado' = só essa condição passa.
+     */
+    const [buyerCondicao, setBuyerCondicao] = useState<'novo' | 'usado' | null>(null);
   const [buyerBudget, setBuyerBudget] = useState<string>('');
   const [buyerPaymentMethod, setBuyerPaymentMethod] = useState<string>('');
   const [buyerSuccess, setBuyerSuccess] = useState<boolean>(false);
@@ -172,7 +232,25 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [createdProductShareUrl, setCreatedProductShareUrl] = useState<string>('');
   const [createdProductTitle, setCreatedProductTitle] = useState<string>('');
   const [linkCopied, setLinkCopied] = useState<boolean>(false);
-  const [buyerGeoPref, setBuyerGeoPref] = useState<'so_estado' | 'brasil_todo'>('so_estado');
+    // mini-1.2: o alcance NÃO é escolhido sozinho. Começa em `null`
+    // quando o perfil não tem UF — nem "só do meu estado" (que não
+    // temos como satisfazer sem a UF) nem "Brasil todo" (que
+    // gravaria BR sem a pessoa pedir). A pessoa escolhe.
+    // Com UF no perfil, o default é 'so_estado', que é o que ela quer.
+    const [buyerAlcance, setBuyerAlcance] =
+      // mini-1.2e: 'so_estado' só como padrão quando a UF do perfil é
+      // VÁLIDA. Com uma sigla inválida ("XX"), o padrão é não-escolher
+      // — senão a pessoa cairia numa busca de estado que não existe.
+      useState<'so_estado' | 'brasil_todo' | null>(
+        ufDoPerfilValida(ufPadrao) ? 'so_estado' : null
+      );
+  // UF escolhida no dropdown (quando o perfil não tem UF e o alcance é 'so_estado')
+  const [buyerUfEscolhida, setBuyerUfEscolhida] = useState<string>('');
+  // mini-1.1: estado de submit do comprador — controla loading e erro da ficha
+  const [submitBuyerLoading, setSubmitBuyerLoading] = useState<boolean>(false);
+  const [submitBuyerError, setSubmitBuyerError] = useState<string>('');
+  // ref para evitar clique duplo antes do loading ser pintado
+  const submitBuyerEmCurso = useRef<boolean>(false);
   const [sellerGeoPref, setSellerGeoPref] = useState<'so_estado' | 'brasil_todo'>('so_estado');
 
   // =========================================================================
@@ -273,35 +351,55 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   if (!isOpen) return null;
 
   // Monta nome/título da máquina de acordo com a categoria selecionada
+  /**
+   * mini-1.2: monta os detalhes da ficha SEM inventar valor.
+   *
+   * Antes, quando a pessoa escrevia só "Sinomach" em Marca/Modelo,
+   * isto devolvia `model: '320D'` e `brand: 'Caterpillar'` — a
+   * busca passava a casar com anúncios que a pessoa não pediu, e
+   * o "320D" ia para o banco como se ela tivesse pedido.
+   *
+   * Agora: sem palavra depois da marca, `model` fica vazio. Sem
+   * subtipo, o rótulo da máquina não vira "undefined Sinomach".
+   * A divisão marca/modelo é só a primeira palavra = marca, e a
+   * busca parcial acha do mesmo jeito porque casa por `includes`.
+   */
   const getCategoryDetails = () => {
     switch (selectedCategory) {
       case 'linha_amarela':
         return {
           catName: 'Linha Amarela',
           catEmoji: '🟡',
-          machineLabel: `${laSubtype} ${laMarcaModelo}`,
+          machineLabel: juntar([laSubtype, laMarcaModelo]),
           anoStr: laAno,
-          detalheStr: `${laHoras} de uso`,
-          brand: laMarcaModelo.split(' ')[0] || 'Caterpillar',
-          model: laMarcaModelo.split(' ').slice(1).join(' ') || '320D',
+            horasStr: laHoras,
+          detalheStr: laHoras ? `${laHoras} de uso` : '',
+          brand: marcaDe(laMarcaModelo),
+          model: modeloDe(laMarcaModelo),
         };
       case 'agricola':
         return {
           catName: 'Agrícola',
           catEmoji: '🚜',
-          machineLabel: `${agroSubtype} ${agroMarcaModelo}`,
+          machineLabel: juntar([agroSubtype, agroMarcaModelo]),
           anoStr: agroAno,
-          detalheStr: `${agroHoras} de uso`,
-          brand: agroMarcaModelo.split(' ')[0] || 'John Deere',
-          model: agroMarcaModelo.split(' ').slice(1).join(' ') || '8R',
+            horasStr: agroHoras,
+          detalheStr: agroHoras ? `${agroHoras} de uso` : '',
+          brand: marcaDe(agroMarcaModelo),
+          model: modeloDe(agroMarcaModelo),
         };
       case 'caminhao':
         return {
           catName: 'Caminhão',
           catEmoji: '🚛',
-          machineLabel: `${truckSubtype} ${truckMarca} ${truckModelo} (${truckTracao})`,
+          machineLabel: juntar([
+            truckSubtype, truckMarca, truckModelo,
+            truckTracao ? `Tração ${truckTracao}` : '',
+          ]),
           anoStr: truckAno,
-          detalheStr: `${truckKm} · Tração ${truckTracao}`,
+            // mini-1.2d: sem horímetro nesta ficha.
+            horasStr: '',
+          detalheStr: truckKm ? `${truckKm} km` : '',
           brand: truckMarca,
           model: truckModelo,
         };
@@ -309,21 +407,23 @@ export const WizardModal: React.FC<WizardModalProps> = ({
         return {
           catName: 'Implemento de Caminhão',
           catEmoji: '🚚',
-          machineLabel: `${impSubtype} ${impMarca} ${impEixos} (${impComprimento})`,
+          machineLabel: juntar([impSubtype, impMarca, impEixos, impComprimento]),
           anoStr: impAno,
-          detalheStr: `${impEixos} · Comp: ${impComprimento}`,
+            // mini-1.2d: sem horímetro nesta ficha.
+            horasStr: '',
+          detalheStr: impEixos,
           brand: impMarca,
-          model: `${impSubtype} ${impEixos}`,
+          model: '',
         };
       default:
         return {
           catName: 'Equipamento',
           catEmoji: '🟡',
-          machineLabel: 'Máquina Pesada',
-          anoStr: '2020',
+          machineLabel: '',
+          anoStr: '',
           detalheStr: '',
-          brand: 'CAT',
-          model: '320D',
+          brand: '',
+          model: '',
         };
     }
   };
@@ -331,79 +431,160 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   // =========================================================================
   // SUBMISSÃO DO COMPRADOR: SALVA PEDIDO + ABRE WHATSAPP 5547996205669
   // =========================================================================
-  const handleSubmitBuyer = (e: React.FormEvent) => {
+  const handleSubmitBuyer = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Guarda contra duplo-clique antes mesmo do setState propagar.
+    if (submitBuyerEmCurso.current || submitBuyerLoading) return;
+
     const details = getCategoryDetails();
-    const parsedValor = parseFloat(buyerBudget.replace(/[^0-9]/g, '')) || 520000;
+    const parsedValor = parseFloat(buyerBudget.replace(/[^0-9]/g, ''));
 
-    // Salvar em localStorage: comprador_dados com dados completos
-    const compradorObj = {
-      nome: buyerName,
-      whatsapp: buyerPhone,
-      cidade: buyerCity,
-      categoria: details.catName,
-      categoriaId: selectedCategory,
-      maquina: details.machineLabel,
+    // mini-1.2d — as três normalizações que a ficha precisa antes de
+    // falar com o App. Todas devolvem null quando não há número, e
+    // null significa "não informado" (não restringe a busca).
+    //
+    // `precoDaProcura` usa o helper do serviço, que entende "R$ 1.500,50"
+    // e trata zero/negativo como "não informado".
+    const precoDaProcura = precoDaBusca(buyerBudget);
+    // Ano MÍNIMO: "a partir de X". O texto da pessoa pode vir como
+    // "2021" ou "2021/2022" — pega o primeiro ano que achar.
+    const anoMinimo = anoMinimoDaBusca(details.anoStr);
+    // Horas MÁXIMAS: "até X horas". O texto pode vir como "4.200h",
+    // "4200 horas" ou "4.200" — o helper normaliza.
+    const horasMaximas = horasMaximasDaBusca(details.horasStr);
+
+    // mini-1.2d — item 4: "só do meu estado" SEM UF válida bloqueia a
+    // busca. Não vira "Brasil todo" e não passa sem restrição.
+    // A pessoa escolheu o estado, mas não sabemos qual é.
+    const alcance = checarAlcance({
+      alcance: buyerAlcance,
+      ufDoPerfil: ufPadrao,
+      ufEscolhida: buyerUfEscolhida,
+    });
+    if (!alcance.ok) {
+      setSubmitBuyerError(alcance.mensagem);
+      setSubmitBuyerLoading(false);
+      return;
+    }
+
+    // cidade é opcional: cidade vazia fica com locationState null;
+    // a regra de alcance (geo_preference + UF do perfil) decide o
+    // estado a gravar. Nenhum valor fictício é inventado.
+    const { locationCity, locationState: cityState } = parsearCidadeUf(buyerCity);
+    const alcanceState = ufDeAlcance({
+      // mini-1.2: `null` = a pessoa não escolheu alcance. Não grava
+      // BR nem SC: sem escolha explícita, não há estado gravado.
+      alcance: buyerAlcance ?? 'sem_escolha',
+      ufDoPerfil: ufPadrao,
+      ufEscolhida: buyerUfEscolhida,
+    });
+    // Se a cidade já tem UF explícita, ela tem prioridade sobre o alcance
+    // (a pessoa digitou "Araquari/SC" — esse é o estado da cidade).
+    // `ListingItem.locationState` é `string` (não nullable), então
+    // null vira string vazia — o schema do Supabase trata '' como
+    // "sem estado", que é o que queremos quando nem cidade nem
+    // alcance indicam um estado.
+    const locationStateFinal: string = cityState ?? alcanceState ?? '';
+
+    const titulo = tituloDaBusca(details.machineLabel, buyerCity);
+    const description = descricaoDaBusca({
+      maquinaLabel: details.machineLabel,
       ano: details.anoStr,
-      especificacoes: details.detalheStr,
-      orcamento: parsedValor,
-      valor: parsedValor,
+      detalhe: details.detalheStr,
+      orcamento: Number.isFinite(parsedValor) ? parsedValor : null,
       formaPagamento: buyerPaymentMethod,
-      geoPreference: buyerGeoPref,
-      timestamp: new Date().toISOString()
-    };
-
-    try {
-      localStorage.setItem('comprador_dados', JSON.stringify(compradorObj));
-      localStorage.setItem('video_pago_cat320d', 'true');
-
-      // Salva no banco "compradores" e histórico de pedidos reais
-      const existing = localStorage.getItem('euquero_pedidos_reais_comprador');
-      const list = existing ? JSON.parse(existing) : [];
-      list.push(compradorObj);
-      localStorage.setItem('euquero_pedidos_reais_comprador', JSON.stringify(list));
-
-      const bancoComp = localStorage.getItem('euquero_banco_compradores');
-      const listComp = bancoComp ? JSON.parse(bancoComp) : [];
-      listComp.push(compradorObj);
-      localStorage.setItem('euquero_banco_compradores', JSON.stringify(listComp));
-    } catch (err) {}
-
-    // Mensagem exata solicitada: "Novo comprador: [categoria] [máquina] em [cidade]"
-    const msgText = encodeURIComponent(
-      `Novo comprador: ${details.catName} ${details.machineLabel} em ${buyerCity}`
-    );
-    const whatsappUrl = `https://wa.me/5547996205669?text=${msgText}`;
-
-    // Abre WhatsApp direto para o vendedor Nardinei Zanardi (5547996205669)
-    try {
-      window.open(whatsappUrl, '_blank');
-    } catch (e) {}
-
-    // Submete no sistema para o EloMatch e feed
-    onSubmitListing({
-      intent: 'buy',
-      title: `Busca ${details.machineLabel} em ${buyerCity}`,
-      category: selectedCategory || 'linha_amarela',
-      subcategoryType: details.machineLabel.split(' ')[0] || 'Máquina',
-      condition: 'usado',
-      brand: details.brand,
-      model: details.model,
-      year: parseInt(details.anoStr) || 2020,
-      price: parsedValor,
-      priceNegotiable: true,
-      locationState: buyerCity.includes('/') ? buyerCity.split('/')[1].trim() : 'SC',
-      locationCity: buyerCity.includes('/') ? buyerCity.split('/')[0].trim() : buyerCity,
-      description: `Busco ${details.machineLabel}, ano ${details.anoStr}. Especificação: ${details.detalheStr}. Orçamento até R$ ${parsedValor.toLocaleString('pt-BR')}. Pagamento: ${buyerPaymentMethod}. Contato direto via WhatsApp.`,
-      userName: buyerName,
-      userPhone: buyerPhone,
-      urgency: 'imediata',
-      geoPreference: buyerGeoPref,
-      acceptsTrade: buyerPaymentMethod.includes('Aceita') || buyerPaymentMethod.includes('Troca'),
-      images: []
     });
 
-    setBuyerSuccess(true);
+    // Campos opcionais: NUNCA usar defaults fictícios (ano 2020, modelo
+    // 320D, orçamento 520000). Se o comprador não preencheu, o campo
+    // fica `undefined` — o schema do `listings` aceita null em todos
+    // eles (via .eq() que o repositório filtra) e o TS quer undefined.
+    const yearNum = details.anoStr ? parseInt(details.anoStr, 10) : undefined;
+    const brand = (details.brand ?? '').trim() || undefined;
+    const model = (details.model ?? '').trim() || undefined;
+
+    // mini-1.2: `jaEstaSalvando` é lido ANTES de marcar o ref: se já
+    // havia uma gravação em curso (duplo-clique), a máquina de estados
+    // short-circuita e o banco não é tocado de novo.
+    const jaEstaSalvando = submitBuyerEmCurso.current;
+    submitBuyerEmCurso.current = true;
+
+    // A gravação passa por `tentarSalvarBusca`, que é onde mora a
+    // regra do duplo-clique e o que a ficha mostra em cada estado.
+    // Ela é pura e testada; aqui só aplicamos o resultado.
+    let estado: 'pronta' | 'salvando' | 'erro' = 'pronta';
+    let vista = vistaDaFicha('pronta');
+    let resultado: { ok: boolean; mensagem?: string } | null = null;
+    try {
+      ({ estado, vista, resultado } = await tentarSalvarBusca({
+      jaEstaSalvando,
+      aoMudar: (v) => {
+        setSubmitBuyerLoading(v.botaoDesabilitado);
+        setSubmitBuyerError(v.erro);
+      },
+        gravar: () => onSubmitBuyerListing({
+        intent: 'buy',
+        title: titulo,
+        category: selectedCategory || 'linha_amarela',
+        subcategoryType: ((details.machineLabel.split(' ')[0] || '').trim()) || '',
+        // mini-1.2d: a condição só vai quando a pessoa escolheu
+        // explicitamente. Sem escolha, a procura é de 'qualquer
+        // condição' e a vitrine mostra novas E usadas.
+        condition: buyerCondicao ?? 'indiferente',
+        brand,
+        model,
+        year: Number.isFinite(yearNum) ? yearNum : undefined,
+        // mini-1.2d: o ano da procura é MÍNIMO ("a partir de X").
+        minYear: anoMinimo,
+        // mini-1.2d: as horas MÁXIMAS ("até X horas"). Vem do campo
+        // real da ficha, e só existe para linha amarela e agrícola —
+        // caminhão tem km e implemento tem eixos.
+        maxHoursUsed: horasMaximas,
+        // mini-1.2d: preço ausente é NULL, nunca 0. Zero é um número
+        // falso: barra a busca e aparece como "R$ 0,00".
+        price: precoDaProcura,
+        priceNegotiable: true,
+        // O teto que filtra a tela de resultados. Ausente = a pessoa
+        // não escreveu orçamento, e então o orçamento NÃO filtra.
+        orcamentoMax: precoDaProcura,
+        locationState: locationStateFinal,
+        locationCity,
+        description,
+        userName: '',
+        userPhone: '',
+        urgency: 'imediata',
+        geoPreference: buyerAlcance ?? undefined,
+        acceptsTrade: buyerPaymentMethod.includes('Aceita') || buyerPaymentMethod.includes('Troca'),
+        images: []
+        }),
+      }));
+    } finally {
+      // mini-1.2: o ref é liberado SEMPRE, inclusive quando a gravação
+      // falhou. Sem isto, a segunda tentativa seria tratada como
+      // duplo-clique e a pessoa ficaria presa no erro.
+      submitBuyerEmCurso.current = false;
+    }
+
+    // A vista final vem da máquina de estados: em erro, a ficha
+    // fica aberta com a mensagem e o que a pessoa digitado; em
+    // sucesso, fecha.
+    setSubmitBuyerLoading(vista.botaoDesabilitado);
+    setSubmitBuyerError(vista.erro);
+
+    if (estado === 'erro') {
+      // Mantém a ficha aberta e devolve o botão para nova tentativa.
+      // Os dados digitados não são tocados aqui: eles continuam no
+      // estado do componente.
+      return;
+    }
+
+    if (resultado?.ok) {
+      // Sucesso confirmado pelo App.tsx (que esperou o Supabase).
+      // Fecha a ficha e devolve a pessoa à Home, que já é a tela
+      // de resultados do app.
+      setBuyerSuccess(true);
+      onClose();
+    }
   };
 
   // =========================================================================
@@ -961,7 +1142,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Sub-opção da Linha Amarela: <span className="text-red-500">*</span>
+                          Sub-opção da Linha Amarela:
                         </label>
                         <select
                           value={laSubtype}
@@ -994,11 +1175,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Ano*: <span className="text-red-500">*</span>
+Ano (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={laAno}
                           onChange={(e) => setLaAno(e.target.value)}
                           placeholder="ex: 2019"
@@ -1008,11 +1188,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Horas de Uso*: <span className="text-red-500">*</span>
+Horas de uso (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={laHoras}
                           onChange={(e) => setLaHoras(e.target.value)}
                           placeholder="ex: 4.200h"
@@ -1027,7 +1206,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Sub-opção Agrícola: <span className="text-red-500">*</span>
+                          Sub-opção Agrícola:
                         </label>
                         <select
                           value={agroSubtype}
@@ -1059,11 +1238,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Ano*: <span className="text-red-500">*</span>
+Ano (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={agroAno}
                           onChange={(e) => setAgroAno(e.target.value)}
                           placeholder="ex: 2021"
@@ -1073,11 +1251,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Horas de Uso*: <span className="text-red-500">*</span>
+Horas de uso (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={agroHoras}
                           onChange={(e) => setAgroHoras(e.target.value)}
                           placeholder="ex: 1.800h"
@@ -1092,7 +1269,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Sub-opção de Caminhão: <span className="text-red-500">*</span>
+                          Sub-opção de Caminhão:
                         </label>
                         <select
                           value={truckSubtype}
@@ -1112,19 +1289,14 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                         <label className="text-xs font-bold text-slate-800 block mb-1">
                           Marca*: <span className="text-red-500">*</span>
                         </label>
-                        <select
+                        <input
+                          type="text"
+                          required
                           value={truckMarca}
                           onChange={(e) => setTruckMarca(e.target.value)}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:bg-white focus:border-emerald-600 outline-none cursor-pointer"
-                        >
-                          <option value="">Selecione…</option>
-                          <option value="Volvo">Volvo</option>
-                          <option value="Scania">Scania</option>
-                          <option value="Mercedes-Benz">Mercedes-Benz</option>
-                          <option value="Volkswagen">Volkswagen</option>
-                          <option value="Iveco">Iveco</option>
-                          <option value="DAF">DAF</option>
-                        </select>
+                          placeholder="ex: Volvo, Scania, DAF"
+                          className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:border-emerald-600 outline-none"
+                        />
                       </div>
 
                       <div>
@@ -1143,11 +1315,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Ano do Caminhão*: <span className="text-red-500">*</span>
+Ano (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={truckAno}
                           onChange={(e) => setTruckAno(e.target.value)}
                           placeholder="ex: 2022"
@@ -1157,11 +1328,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Quilometragem (KM)*: <span className="text-red-500">*</span>
+Quilometragem (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={truckKm}
                           onChange={(e) => setTruckKm(e.target.value)}
                           placeholder="ex: 280.000 km"
@@ -1171,7 +1341,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Tipo de Tração*: <span className="text-red-500">*</span>
+Tração (opcional):
                         </label>
                         <select
                           value={truckTracao}
@@ -1193,7 +1363,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Sub-opção de Implemento: <span className="text-red-500">*</span>
+                          Sub-opção de Implemento:
                         </label>
                         <select
                           value={impSubtype}
@@ -1227,11 +1397,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Ano*: <span className="text-red-500">*</span>
+Ano (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={impAno}
                           onChange={(e) => setImpAno(e.target.value)}
                           placeholder="ex: 2021"
@@ -1241,7 +1410,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Nº de Eixos*: <span className="text-red-500">*</span>
+Nº de Eixos (opcional):
                         </label>
                         <select
                           value={impEixos}
@@ -1260,11 +1429,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div className="sm:col-span-2">
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Comprimento*: <span className="text-red-500">*</span>
+Comprimento (opcional):
                         </label>
                         <input
                           type="text"
-                          required
                           value={impComprimento}
                           onChange={(e) => setImpComprimento(e.target.value)}
                           placeholder="ex: 14,50m"
@@ -1278,11 +1446,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                   <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-bold text-slate-800 block mb-1">
-                        Cidade*: <span className="text-red-500">*</span>
+                        Cidade: <span className="text-slate-400 font-medium">(opcional)</span>
                       </label>
                       <input
                         type="text"
-                        required
                         value={buyerCity}
                         onChange={(e) => setBuyerCity(e.target.value)}
                         placeholder="ex: Araquari/SC ou Joinville/SC"
@@ -1292,13 +1459,12 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                     <div>
                       <label className="text-xs font-bold text-slate-800 block mb-1">
-                        Orçamento até (R$)*: <span className="text-red-500">*</span>
+                        Orçamento até (R$): <span className="text-slate-400 font-medium">(opcional)</span>
                       </label>
                       <div className="relative">
                         <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">R$</span>
                         <input
                           type="text"
-                          required
                           value={buyerBudget}
                           onChange={(e) => setBuyerBudget(e.target.value)}
                           placeholder="ex: 520.000"
@@ -1307,72 +1473,132 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                       </div>
                     </div>
 
-                    {/* Campo Geografia 2 opções (Ponto 2 do Prompt) */}
+                    {/* mini-1.1: campo geografia com alcance e UF real */}
                     <div className="sm:col-span-2 space-y-1.5">
                       <label className="text-xs font-bold text-slate-800 block">
-                        Campo Geografia — Onde você quer buscar?: <span className="text-red-500">*</span>
+                        Onde você quer buscar?
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => setBuyerGeoPref('so_estado')}
+                          onClick={() => setBuyerAlcance('so_estado')}
                           className={`py-2.5 px-3 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            buyerGeoPref === 'so_estado'
+                            buyerAlcance === 'so_estado'
                               ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
                               : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
                           }`}
                         >
-                          <span>📍 SÓ DO MEU ESTADO (SC)</span>
+                          <span>📍 Só do meu estado</span>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => setBuyerGeoPref('brasil_todo')}
+                          onClick={() => setBuyerAlcance('brasil_todo')}
                           className={`py-2.5 px-3 rounded-xl border-2 text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                            buyerGeoPref === 'brasil_todo'
+                            buyerAlcance === 'brasil_todo'
                               ? 'border-emerald-600 bg-emerald-50 text-emerald-950 shadow-xs ring-2 ring-emerald-500/20'
                               : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
                           }`}
                         >
-                          <span>🇧🇷 BRASIL TODO</span>
+                          <span>🇧🇷 Brasil todo</span>
                         </button>
                       </div>
+
+                      {/* Dropdown de UF: aparece quando o alcance é 'so_estado' e
+                          não temos UF do perfil. Se o perfil tem UF, ela é o
+                          default e o dropdown fica oculto. */}
+                      {buyerAlcance === 'so_estado' && precisaSelecionarUf({ alcance: buyerAlcance, ufDoPerfil: ufPadrao }) && (
+                        <div className="pt-1">
+                          <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                            Estado (UF){' '}
+                            <span className="text-slate-400 font-medium">
+                              (obrigatória para buscar só no seu estado)
+                            </span>
+                          </label>
+                          <select
+                            value={buyerUfEscolhida}
+                            onChange={(e) => setBuyerUfEscolhida(e.target.value)}
+                            className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-bold text-slate-900 focus:border-emerald-600 outline-none cursor-pointer"
+                          >
+                            <option value="">— Escolha a UF —</option>
+                            {UFS_BRASIL.map((uf) => (
+                              <option key={uf} value={uf}>{uf}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {buyerAlcance === 'so_estado' && ufDoPerfilValida(ufPadrao) && (
+                        <p className="text-[10px] text-slate-500">
+                          ✓ Estado do seu perfil: <strong>{ufPadrao}</strong>.
+                        </p>
+                      )}
+
+                      {buyerAlcance === null && (
+                        <p className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg px-2 py-1">
+                          Escolha uma das opções acima. Sem escolha, a busca não fica
+                          presa a um estado.
+                        </p>
+                      )}
                       <p className="text-[10px] text-slate-500">
-                        {buyerGeoPref === 'so_estado'
-                          ? '✓ Padrão ativo: busca apenas máquinas no seu estado (SC) para frete econômico e vistoria fácil.'
-                          : '✓ Busca abrangente em todos os estados do Brasil.'}
+                        {buyerAlcance === 'so_estado'
+                          ? '✓ Restringe a busca ao estado escolhido.'
+                          : buyerAlcance === 'brasil_todo'
+                            ? '✓ Busca em todos os estados do Brasil.'
+                            : '⏳ Nenhum alcance escolhido — a busca considera todos os estados.'}
                       </p>
-                    </div>
 
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1">
-                        Seu Nome Completo*: <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={buyerName}
-                        onChange={(e) => setBuyerName(e.target.value)}
-                        placeholder="Carlos Mendes"
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-medium focus:border-emerald-600 outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-bold text-slate-800 block mb-1">
-                        Seu WhatsApp*: <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={buyerPhone}
-                        onChange={(e) => setBuyerPhone(e.target.value)}
-                        placeholder={mascararTelefone('(47) 99620-5669')}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-mono font-bold focus:border-emerald-600 outline-none"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
+                      {/* mini-1.2d: condição EXPLÍCITA. Antes a ficha
+                          fixava 'usado' sozinho, e a pessoa nunca tinha
+                          escolhido isso. Sem escolha aqui, a vitrine
+                          mostra novas E usadas. */}
+                      <div className="pt-1">
+                        <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                          Condição{' '}
+                          <span className="text-slate-400 font-medium">
+                            (opcional — em branco = novas e usadas)
+                          </span>
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBuyerCondicao((atual) => (atual === 'novo' ? null : 'novo'))
+                            }
+                            className={`py-2 px-2 rounded-xl border-2 text-[11px] font-black transition-all cursor-pointer ${
+                              buyerCondicao === 'novo'
+                                ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20'
+                                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            Novo
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBuyerCondicao((atual) => (atual === 'usado' ? null : 'usado'))
+                            }
+                            className={`py-2 px-2 rounded-xl border-2 text-[11px] font-black transition-all cursor-pointer ${
+                              buyerCondicao === 'usado'
+                                ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20'
+                                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            Usado
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setBuyerCondicao(null)}
+                            className={`py-2 px-2 rounded-xl border-2 text-[11px] font-black transition-all cursor-pointer ${
+                              buyerCondicao === null
+                                ? 'border-emerald-600 bg-emerald-50 text-emerald-950 ring-2 ring-emerald-500/20'
+                                : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            {buyerCondicao === null ? 'Sem preferência' : 'Qualquer'}
+                          </button>
+                        </div>
+                      </div>
+                    </div><div className="sm:col-span-2">
                       <label className="text-xs font-bold text-slate-800 block mb-1">
                         Forma de Pagamento:
                       </label>
@@ -1390,22 +1616,53 @@ export const WizardModal: React.FC<WizardModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Botão verde do comprador: Salva pedido e abre WhatsApp direto para 5547996205669 */}
+                  {/* Botão verde do comprador: Salva a busca e leva para a tela de resultados */}
                   <div className="pt-2">
                     <button
                       type="submit"
-                      className="w-full py-4 px-6 rounded-2xl bg-[#00875A] hover:bg-emerald-700 active:scale-[0.98] text-white font-black text-sm sm:text-base shadow-xl shadow-emerald-700/25 flex items-center justify-center gap-2.5 cursor-pointer transition-all text-center"
+                      disabled={submitBuyerLoading}
+                      aria-busy={submitBuyerLoading}
+                      className={`w-full py-4 px-6 rounded-2xl text-white font-black text-sm sm:text-base shadow-xl shadow-emerald-700/25 flex items-center justify-center gap-2.5 transition-all text-center ${
+                        submitBuyerLoading
+                          ? 'bg-emerald-400 cursor-wait'
+                          : 'bg-[#00875A] hover:bg-emerald-700 active:scale-[0.98] cursor-pointer'
+                      }`}
                     >
-                      <MessageSquare className="w-5 h-5 fill-white" />
-                      <span>Salvar Meu Pedido e Falar no WhatsApp</span>
-                      <ArrowRight className="w-5 h-5 ml-1" />
+                      {submitBuyerLoading ? (
+                        <>
+                          <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Salvando busca…</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-5 h-5" />
+                          <span>Buscar Máquinas</span>
+                          <ArrowRight className="w-5 h-5 ml-1" />
+                        </>
+                      )}
                     </button>
                   </div>
 
+                  {submitBuyerError && (
+                    <div
+                      role="alert"
+                      className="p-3 rounded-xl bg-red-50 border border-red-300 text-red-800 text-xs font-bold flex items-start gap-2"
+                    >
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <div>
+                        <div>{submitBuyerError}</div>
+                        <div className="text-[10px] font-medium text-red-700 mt-1">
+                          Você pode tentar de novo sem perder o que já preencheu.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-[11px] text-center text-slate-500">
-                    💬 Ao salvar, enviamos a notificação: <strong>Novo comprador: {currentDetails.catName} {currentDetails.machineLabel} em {buyerCity}</strong> para WhatsApp {mascararTelefone('(47) 99620-5669')}.
+                    ✓ Salvaremos a sua procura e mostraremos as máquinas disponíveis na próxima tela.
+                    O contato com o vendedor é feito depois, em uma etapa à parte.
                   </p>
-                </form>
+                  </form>
               )}
 
               {/* ===================================================================== */}

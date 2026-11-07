@@ -6,6 +6,7 @@ import {
 import { ListingItem, ProcuraPublica } from '../types';
 import { calculateCompradoresInteressados, toProcuraPublica } from '../services/productService';
 import { getShareableProductUrl } from '../utils/productLinks';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface ProcuraPublicaDetailProps {
   item: ListingItem;
@@ -259,7 +260,7 @@ export const ProcuraPublicaDetail: React.FC<ProcuraPublicaDetailProps> = ({
                       {sim.title}
                     </span>
                     <span className="text-[11px] text-slate-500 block">
-                      {sim.locationCity}/{sim.locationState} · <strong className="text-emerald-700 font-mono">até R$ {sim.price.toLocaleString('pt-BR')}</strong>
+                      {sim.locationCity}/{sim.locationState} · <strong className="text-emerald-700 font-mono">{precoDoCard(sim.price, { sufixo: 'até R$ ' })}</strong>
                     </span>
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 shrink-0 transition-transform group-hover:translate-x-0.5" />

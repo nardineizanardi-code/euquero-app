@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MessageSquare, Sparkles, Phone, ArrowRight, CheckCircle2, Clock, Zap, Layers } from 'lucide-react';
 import { MatchResult, ChatMessage, ListingItem } from '../types';
 import { MatchCard } from './MatchCard';
+import { precoDoCard } from '../services/filtrosBusca';
 
 interface ConversationsViewProps {
   matches: MatchResult[];
@@ -136,7 +137,7 @@ export const ConversationsView: React.FC<ConversationsViewProps> = ({
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                   <div className="text-xs font-mono font-bold text-slate-900 tabular-nums">
-                    R$ {seller.price.toLocaleString('pt-BR')}
+                    {precoDoCard(seller.price, { sufixo: 'R$ ' })}
                   </div>
                   <button
                     onClick={() => onOpenChat(match)}
