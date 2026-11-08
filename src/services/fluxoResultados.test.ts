@@ -143,8 +143,14 @@ test('CORREÇÃO: o App devolve a quantidade no resultado da gravação', () => 
 });
 
 test('CORREÇÃO: a contagem usa a MESMA função de filtro da vitrine', () => {
-  const bloco = trechoEntre(app, 'const quantidade = aplicarFiltro(', 'return { ok: true, quantidade };');
-  assert.match(bloco, /aplicarFiltro\(/);
+  // TASK 2: a contagem virou uma função do serviço, para que a busca
+  // COM e SEM sessão deem o mesmo número.
+  const bloco = trechoEntre(
+    app,
+    'const quantidade = contarResultadosDaBusca({',
+    'return { ok: true, quantidade };'
+  );
+  assert.match(bloco, /contarResultadosDaBusca\(/);
   assert.match(bloco, /isItemInCategory/);
   assert.match(bloco, /termoCasaNoAnuncio/);
 });

@@ -1202,11 +1202,10 @@ export const WizardModal: React.FC<WizardModalProps> = ({
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Marca/Modelo*: <span className="text-red-500">*</span>
+                          Marca/Modelo: <span className="text-slate-400 font-normal">(opcional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={laMarcaModelo}
                           onChange={(e) => setLaMarcaModelo(e.target.value)}
                           placeholder="ex: CAT 320D"
@@ -1265,11 +1264,10 @@ Horas de uso (opcional):
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Marca/Modelo*: <span className="text-red-500">*</span>
+                          Marca/Modelo: <span className="text-slate-400 font-normal">(opcional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={agroMarcaModelo}
                           onChange={(e) => setAgroMarcaModelo(e.target.value)}
                           placeholder="ex: John Deere 8R"
@@ -1328,11 +1326,10 @@ Horas de uso (opcional):
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Marca*: <span className="text-red-500">*</span>
+                          Marca: <span className="text-slate-400 font-normal">(opcional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={truckMarca}
                           onChange={(e) => setTruckMarca(e.target.value)}
                           placeholder="ex: Volvo, Scania, DAF"
@@ -1342,11 +1339,10 @@ Horas de uso (opcional):
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Modelo*: <span className="text-red-500">*</span>
+                          Modelo: <span className="text-slate-400 font-normal">(opcional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={truckModelo}
                           onChange={(e) => setTruckModelo(e.target.value)}
                           placeholder="ex: FH 540, R 450, Actros 2651"
@@ -1424,11 +1420,10 @@ Tração (opcional):
 
                       <div>
                         <label className="text-xs font-bold text-slate-800 block mb-1">
-                          Marca*: <span className="text-red-500">*</span>
+                          Marca: <span className="text-slate-400 font-normal">(opcional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={impMarca}
                           onChange={(e) => setImpMarca(e.target.value)}
                           placeholder="ex: Randon, Guerra, Noma, Librelato"

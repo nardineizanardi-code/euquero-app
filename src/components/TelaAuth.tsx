@@ -36,6 +36,14 @@ interface Props {
   onFechar: () => void;
   /** Chamado quando o login dá certo. Recebe o uid do servidor. */
   onEntrou: (uid: string, nome: string) => void;
+  /**
+   * TASK 2 (FRICÇÃO ZERO) — por que a tela de login apareceu.
+   *
+   * A pessoa pode BUSCAR sem conta. O login só é pedido no CONTATO.
+   * Sem esta explicação, ela acha que precisa entrar para ver os
+   * anúncios — e volta para a Home sem ver nada.
+   */
+  motivo?: string;
 }
 
 const classes = {
@@ -69,11 +77,13 @@ const Descricao: Record<Aba, string> = {
   recuperar: 'Se o e-mail tiver conta, o link de redefinição chega em instantes.',
 };
 
-export const TelaAuth: React.FC<Props> = ({ aberto, onFechar, onEntrou }) => {
+export const TelaAuth: React.FC<Props> = ({ aberto, onFechar, onEntrou, motivo }) => {
   const [aba, setAba] = useState<Aba>('entrar');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [nome, setNome] = useState('');
+  // TASK 2: o WhatsApp do comprador. Vai nos metadados do usuário.
+  const [telefone, setTelefone] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -132,7 +142,7 @@ export const TelaAuth: React.FC<Props> = ({ aberto, onFechar, onEntrou }) => {
     // A union é desfeita aqui: cada ramo só acessa os campos que tem.
     const criando = aba === 'criar';
     const r = criando
-      ? await cadastrar(email, senha, nome)
+      ? await cadastrar(email, senha, nome, telefone)
       : await entrar(email, senha);
     setOcupado(false);
 
@@ -172,6 +182,15 @@ export const TelaAuth: React.FC<Props> = ({ aberto, onFechar, onEntrou }) => {
           <div>
             <h2 className="text-xl font-black text-slate-900">{TITULO[aba]}</h2>
             <p className="text-xs text-slate-500 mt-1">{Descricao[aba]}</p>
+            {/*
+              TASK 2: o aviso do motivo. A pessoa já viu os anúncios —
+              ela só precisa se identificar para falar com o vendedor.
+            */}
+            {motivo && (
+              <p className="mt-2 text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                {motivo}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -199,6 +218,40 @@ export const TelaAuth: React.FC<Props> = ({ aberto, onFechar, onEntrou }) => {
                 onChange={(e) => setNome(e.target.value)}
                 disabled={ocupado}
                 maxLength={80}
+              />
+            </div>
+          )}
+
+          {/*
+            TASK 2 (FRICÇÃO ZERO) — o WhatsApp do comprador.
+
+            Aparece SÓ no cadastro. É o contato que pede a
+            identificação: quando a pessoa entra para falar com o
+            vendedor, ela diz quem é e como o vendedor a encontra.
+
+            Vai para `user_metadata.phone`, e o trigger do banco copia
+            para `profiles.phone`. Nenhum SQL novo.
+
+            Opcional de propósito: quem já tem conta não digita de
+            novo, e a busca não exige nada disso.
+          */}
+          {aba === 'criar' && (
+            <div>
+              <label className={classes.rotulo} htmlFor="auth-telefone">
+                WhatsApp{' '}
+                <span className="text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                id="auth-telefone"
+                className={classes.campo}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                placeholder="(11) 90000-0000"
+                value={telefone}
+                onChange={(e) => setTelefone(e.target.value)}
+                disabled={ocupado}
+                maxLength={20}
               />
             </div>
           )}

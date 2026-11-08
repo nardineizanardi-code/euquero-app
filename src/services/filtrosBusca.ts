@@ -827,3 +827,42 @@ export const textoDoEmptyState = (veioDaFicha: boolean): string => {
   }
   return TEXTO_SEM_PRODUTO;
 };
+
+/**
+ * ─────────────────────────────────────────────────────────────────────
+ * TASK 2 (FRICÇÃO ZERO) — CONTAR OS RESULTADOS DA BUSCA
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * Conta quantos anúncios casam com os critérios da busca.
+ *
+ * Por que uma função, e não a linha espalhada no App? Porque a
+ * busca acontece em DOIS caminhos — com e sem sessão — e os dois
+ * precisam dar o MESMO número. Se cada caminho contasse por conta
+ * própria, um dia eles divergiriam, e a pessoa leria "achamos 3"
+ * numa tela e "achamos 0" na outra.
+ *
+ * A contagem usa a MESMA função de filtro (`aplicarFiltro`) que a
+ * vitrine usa. Por isso o número que a tela de sucesso mostra é o
+ * número de cards que a pessoa vê.
+ */
+
+/** O que o helper precisa para contar. */
+export interface ContagemDaBusca {
+  preparacao: PreparacaoDaBusca;
+  /** Os anúncios locais (estado do App). */
+  locais: AnuncioParaFiltrar[];
+  /** Os anúncios públicos vindos do banco (`public_listings`). */
+  publicos: AnuncioParaFiltrar[];
+  /** A mesma função que a vitrine usa para casar a categoria. */
+  casarCategoria: (item: AnuncioParaFiltrar, categoria: string) => boolean;
+  /** A mesma função que a vitrine usa para casar o termo. */
+  casarTermo: (termo: string, item: AnuncioParaFiltrar) => boolean;
+}
+
+export const contarResultadosDaBusca = (deps: ContagemDaBusca): number => {
+  const todos = [...deps.locais, ...deps.publicos];
+  return aplicarFiltro(todos, deps.preparacao.filtros, {
+    casarCategoria: deps.casarCategoria,
+    casarTermo: deps.casarTermo,
+  }).length;
+};

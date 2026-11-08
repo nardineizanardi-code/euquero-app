@@ -272,8 +272,10 @@ test('SUCESSO: NENHUMA aplicação de filtro antes do salvamento', () => {
 
 test('FALHA: no catch do banco, os filtros NÃO são aplicados', () => {
   const f = trecho(app, 'const handleCreateBuyerListing', 'const semBackend =');
-  const trySalvar = f.indexOf('if (sessao && backend.configurado) {');
-  assert.ok(trySalvar > -1);
+  // TASK 2: a condição virou `podeGravar`, que é
+  // `Boolean(sessao && backend.configurado)`.
+  const trySalvar = f.indexOf('if (podeGravar) {');
+  assert.ok(trySalvar > -1, 'não achei o caminho de gravação');
   const j = f.indexOf('return { ok: false, mensagem };', trySalvar);
   assert.ok(j > -1);
   const parte = f.slice(trySalvar, j);
@@ -287,14 +289,59 @@ test('FALHA: no catch do banco, os filtros NÃO são aplicados', () => {
   );
 });
 
-test('FALHA: no caminho sem backend/sessão, os filtros NÃO são aplicados', () => {
-  const f = trecho(app, 'const handleCreateBuyerListing', 'const semBackend =');
-  const i = f.indexOf('const semBackend =');
+test('TASK 2: SEM SESSÃO, os filtros SÃO aplicados (a busca não exige login)', () => {
+  // Este teste mudou de propósito com a Tarefa 2. Antes, o caminho
+  // "sem backend ou sem sessão" devolvia erro e NÃO filtrava. Agora:
+  //
+  //  - sem BACKEND: é falha de configuração — a busca não acontece;
+  //  - sem SESSÃO: a busca acontece, a demanda não é gravada.
+  //
+  // A pessoa vê os anúncios da `public_listings` sem ter conta.
+  // A âncora de fim é o COMENTÁRIO que vem depois do handler — o
+  // `const semBackend =` está no meio do caminho e não serve de fim.
+  const f = trecho(app, 'const handleCreateBuyerListing', '// Open in-app chat for item');
+  // O caminho sem sessão começa DEPOIS do bloco de "sem backend".
+  const i = f.indexOf('if (!backend.configurado) {');
+  assert.ok(i > -1, 'não achei o caminho sem backend');
   const trechoSem = f.slice(i, f.length);
+
+  // O caminho sem sessão APLICA os filtros.
+  assert.match(
+    trechoSem,
+    /aplicarFiltrosNaTela\(preparacaoSemGravar/,
+    'sem sessão, a busca tem que filtrar a vitrine'
+  );
+  assert.match(
+    trechoSem,
+    /return \{ ok: true, quantidade: quantidadeSemGravar \}/,
+    'sem sessão, a busca tem que dar certo'
+  );
+
+  // E a espelhagem é desfeita: a demanda não foi gravada, então não
+  // pode ficar pela metade na lista. O `desfazerEspelho()` vem ANTES
+  // do bloco de "sem backend" — é ele que tira a demanda espelhada
+  // da lista, já que ela não vai ser gravada.
+  const antesDoCaminho = f.slice(0, i);
+  assert.match(
+    antesDoCaminho,
+    /desfazerEspelho\(\)/,
+    'a demanda espelhada não foi desfeita'
+  );
+});
+
+test('TASK 2: sem BACKEND, a busca NÃO acontece (falha de configuração)', () => {
+  const f = trecho(app, 'const handleCreateBuyerListing', '// Open in-app chat for item');
+  const i = f.indexOf('if (!backend.configurado) {');
+  assert.ok(i > -1, 'não achei o caminho sem backend');
+  const trechoSem = f.slice(i, f.length);
+  // O caminho de sem backend devolve erro, e não aplica filtro.
+  const j = trechoSem.indexOf('return { ok: false, mensagem: semBackend };');
+  assert.ok(j > -1, 'não achei o retorno de erro sem backend');
+  const antes = trechoSem.slice(0, j);
   assert.equal(
-    trechoSem.match(/setFiltrosDaFicha|setSelectedCategory\(/g),
+    antes.match(/aplicarFiltrosNaTela\(/g),
     null,
-    'a vitrine foi filtrada por uma busca que não foi salva'
+    'sem backend, a vitrine não pode ser filtrada'
   );
 });
 

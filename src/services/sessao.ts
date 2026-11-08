@@ -203,7 +203,21 @@ const destinoRedefinicao = (): string => {
 export const cadastrar = async (
   email: string,
   senha: string,
-  nome: string
+  nome: string,
+  /**
+   * TASK 2 (FRICÇÃO ZERO) — o WhatsApp do comprador.
+   *
+   * Vai para os metadados do usuário (`user_metadata.phone`), e o
+   * trigger do banco copia para `profiles.phone`. É o MESMO caminho
+   * que o `full_name` usa — nenhum SQL novo, nenhuma policy nova.
+   *
+   * O telefone NÃO é público: a `public_listings` não expõe
+   * `user_phone`, e o vendedor vê o NOME do comprador, não o
+   * número. O telefone do comprador só existe no perfil dele.
+   *
+   * Opcional: se a pessoa não preencher, o cadastro segue sem ele.
+   */
+  telefone?: string
 ): Promise<ResultadoCadastro> => {
   const cli = obterCliente();
   if (!cli) {
@@ -228,7 +242,15 @@ export const cadastrar = async (
       options: {
         // O nome vai para os metadados do usuário, e o trigger do banco
         // copia para `profiles`. É o mesmo caminho que a produção já usa.
-        data: { full_name: nome.trim() },
+        data: {
+          full_name: nome.trim(),
+          // TASK 2: o WhatsApp vai nos metadados, para o trigger
+          // copiar para `profiles.phone`. Sem telefone, a chave não
+          // entra — o trigger usa `coalesce(..., '')`.
+          ...(telefone?.trim()
+            ? { phone: telefone.trim() }
+            : {}),
+        },
         // Onde a pessoa volta depois de confirmar o e-mail.
         //
         // Sem isto, o Supabase usa o Site URL configurado no painel —

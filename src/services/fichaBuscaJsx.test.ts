@@ -345,7 +345,10 @@ describe('mini-1.2 · falha no Supabase não deixa busca duplicada', () => {
   const app = readFileSync(resolvePath(aqui, '../App.tsx'), 'utf8');
   const i = app.indexOf('const handleCreateBuyerListing');
   assert.ok(i > 0);
-  const corpo = app.slice(i, i + 5200);
+  // TASK 2: o handler cresceu (o caminho "sem sessão" foi
+  // acrescentado). A janela precisa ser grande o bastante para
+  // cobrir o `await backend.salvar` e o catch que vem depois.
+  const corpo = app.slice(i, i + 9000);
 
   it('existe uma rotina de desfazer a espelhagem otimista', () => {
     assert.match(corpo, /const desfazerEspelho = \(\) =>/, 'sem rollback');
@@ -384,8 +387,21 @@ describe('mini-1.2 · falha no Supabase não deixa busca duplicada', () => {
   });
 
   it('o rollback também roda sem backend ou sem sessão', () => {
-    const sem = corpo.slice(corpo.indexOf('sem backend ou sem sessão'))
-    assert.match(sem.slice(0, 400), /desfazerEspelho\(\)/,
-      'sem backend/sessão a demanda ficaria órfã na lista');
+    // TASK 2: a âncora mudou. O caminho sem sessão agora é o bloco
+    // que começa em "Sem sessão: a busca acontece" — e o
+    // `desfazerEspelho()` vem ANTES dele, num bloco que serve aos
+    // dois casos (sem backend e sem sessão).
+    const i = corpo.indexOf('desfazerEspelho();');
+    assert.ok(i > -1, 'não achei o desfazerEspelho do caminho sem backend/sessão');
+    // E ele tem que estar no caminho que NÃO gravou — ou seja,
+    // depois do `await backend.salvar` e do catch.
+    const salvar = corpo.indexOf('await backend.salvar');
+    assert.ok(salvar > -1);
+    assert.ok(i > salvar, 'o desfazerEspelho do caminho sem sessão tem que vir depois da gravação');
+    // E tem que estar antes do caminho sem sessão, para valer para
+    // os dois casos.
+    const semSessao = corpo.indexOf('Sem sessão: a busca acontece');
+    assert.ok(semSessao > -1, 'não achei o caminho sem sessão');
+    assert.ok(i < semSessao, 'o desfazerEspelho tem que vir antes do caminho sem sessão');
   });
 });

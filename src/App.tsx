@@ -81,6 +81,9 @@ import {
   aplicarFiltro,
   dicaDoEmptyState,
   TEXTO_SEM_RESULTADO,
+  // TASK 2: a contagem dos resultados é uma função do serviço, para
+  // que a busca COM e SEM sessão deem o mesmo número.
+  contarResultadosDaBusca,
   type FiltrosAplicados,
 } from './services/filtrosBusca';
 
@@ -473,6 +476,9 @@ export default function App() {
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [sessaoCarregando, setSessaoCarregando] = useState(true);
   const [authAberto, setAuthAberto] = useState(false);
+  // TASK 2 (FRICÇÃO ZERO): por que a tela de login apareceu. Vazio =
+  // login pedido pelo cabeçalho (não é o contato).
+  const [motivoDoAuth, setMotivoDoAuth] = useState<string | undefined>(undefined);
 
   /* ══════════════════════════════════════════════════════════════════
      ANÚNCIOS REAIS — o backend
@@ -1406,7 +1412,25 @@ export default function App() {
       });
     };
 
-    if (sessao && backend.configurado) {
+    // ─────────────────────────────────────────────────────────────────
+    // TASK 2 (FRICÇÃO ZERO) — A BUSCA NÃO EXIGE LOGIN
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // A pessoa entra na Home, toca em "Quero Comprar", preenche a
+    // ficha e clica em "Buscar Máquinas" — SEM estar logada. Ela tem
+    // que ver os anúncios. O banco já tem a `public_listings` para
+    // leitura pública, então não há motivo técnico para travar.
+    //
+    // O que muda aqui é SÓ a gravação da demanda:
+    //
+    //  - COM sessão: a demanda é gravada no banco (como antes).
+    //  - SEM sessão: a demanda NÃO é gravada — mas a busca acontece
+    //    do mesmo jeito, e a pessoa vê os cards.
+    //
+    // O login passa a ser pedido no CONTATO, e só lá.
+    const podeGravar = Boolean(sessao && backend.configurado);
+
+    if (podeGravar) {
       try {
         const salvo = await backend.salvar(newItem);
         setListings((prev) => {
@@ -1455,15 +1479,14 @@ export default function App() {
         // `filteredListings.length`: ela é um useMemo que ainda não
         // recalculou neste tick, e o `setState` do filtro não é
         // atômico com este return.
-        const quantidade = aplicarFiltro(
-          juntarAnuncios(listings, backend.publicos),
-          preparacao.filtros,
-          {
-            casarCategoria: (item, categoria) =>
-              isItemInCategory(item as unknown as ListingItem, categoria),
-            casarTermo: (termo, item) => termoCasaNoAnuncio(termo, item),
-          }
-        ).length;
+        const quantidade = contarResultadosDaBusca({
+          preparacao,
+          locais: listings,
+          publicos: backend.publicos,
+          casarCategoria: (item, categoria) =>
+            isItemInCategory(item as unknown as ListingItem, categoria),
+          casarTermo: (termo, item) => termoCasaNoAnuncio(termo, item),
+        });
         return { ok: true, quantidade };
       } catch (e) {
         desfazerEspelho();
@@ -1472,15 +1495,62 @@ export default function App() {
         return { ok: false, mensagem };
       }
     }
-    // mini-1.2: sem backend ou sem sessão, a gravação local não
-    // conta como sucesso — e a espelhagem também é desfeita, para
-    // não deixar busca pela metade na lista.
+    // ─────────────────────────────────────────────────────────────────
+    // TASK 2 — A BUSCA SEM LOGIN
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // Chegou aqui porque a gravação no banco NÃO aconteceu (sem
+    // sessão, ou sem backend). Isso NÃO impede a busca: a pessoa
+    // pode ver os anúncios da `public_listings` sem conta nenhuma.
+    //
+    // O que muda em relação ao caminho de cima:
+    //
+    //  - a demanda espelhada é desfeita (não foi gravada, não pode
+    //    ficar pela metade na lista);
+    //  - os filtros SÃO aplicados — a pessoa vê os cards;
+    //  - a quantidade é calculada do mesmo jeito, para a tela de
+    //    sucesso dizer a verdade.
+    //
+    // A diferença entre "busca sem login" e "busca com login" é
+    // apenas isto: a demanda fica registrada ou não.
     desfazerEspelho();
-    const semBackend =
-      !backend.configurado
-        ? 'não há backend configurado; contate o suporte'
-        : 'é preciso estar logado para salvar a busca no banco';
-    return { ok: false, mensagem: semBackend };
+
+    if (!backend.configurado) {
+      // Sem backend não há como nem ler o catálogo público. Isto é
+      // uma falha de configuração, não a falta de login.
+      const semBackend = 'não há backend configurado; contate o suporte';
+      return { ok: false, mensagem: semBackend };
+    }
+
+    // Sem sessão: a busca acontece, a demanda não é gravada.
+    const preparacaoSemGravar = prepararBusca({
+      category: newListingData.category,
+      brand: newListingData.brand,
+      model: newListingData.model,
+      title: newListingData.title,
+      geoPreference: newListingData.geoPreference,
+      locationState: newListingData.locationState,
+      minYear: newListingData.minYear ?? null,
+      maxHoursUsed: newListingData.maxHoursUsed ?? null,
+      condition: newListingData.condition ?? null,
+      orcamentoMax: newListingData.orcamentoMax ?? null,
+    });
+    aplicarFiltrosNaTela(preparacaoSemGravar, {
+      setFiltrosDaFicha,
+      setSelectedCategory,
+      setGeoScopeFilter,
+      setSearchQuery,
+      setIntentFilter,
+    });
+    const quantidadeSemGravar = contarResultadosDaBusca({
+      preparacao: preparacaoSemGravar,
+      locais: listings,
+      publicos: backend.publicos,
+      casarCategoria: (item, categoria) =>
+        isItemInCategory(item as unknown as ListingItem, categoria),
+      casarTermo: (termo, item) => termoCasaNoAnuncio(termo, item),
+    });
+    return { ok: true, quantidade: quantidadeSemGravar };
   };
 
   // Open in-app chat for item
@@ -1501,6 +1571,30 @@ export default function App() {
      continua, porque ela serve para demonstrar o fluxo.
      ══════════════════════════════════════════════════════════════════ */
   const handleStartChatForItem = (item: ListingItem) => {
+    // ─────────────────────────────────────────────────────────────────
+    // TASK 2 (FRICÇÃO ZERO) — O LOGIN É EXIGIDO AQUI, NO CONTATO
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // A pessoa pode BUSCAR sem login. Mas não pode FALAR com o
+    // vendedor sem se identificar: é o contato que cria a conversa
+    // no banco e que o vendedor responde. Então o login é pedido
+    // aqui — e só aqui.
+    //
+    // O pedido de login acontece ANTES de qualquer efeito: sem
+    // mensagem no banco, sem match criado, sem chat local. Quando a
+    // pessoa entrar, ela toca de novo no botão e o contato acontece
+    // normalmente.
+    if (!sessao) {
+      // TASK 2: o login é pedido AQUI, no contato — e a tela explica
+      // que a pessoa já pode ver os anúncios; só precisa se
+      // identificar para falar com o vendedor.
+      setMotivoDoAuth(
+        'Você já está vendo os anúncios. Só precisa entrar para falar com o vendedor.'
+      );
+      setAuthAberto(true);
+      return;
+    }
+
     const existing = backgroundMatches.find(
       (m) => m.sellerListing.id === item.id || m.buyerDemand.id === item.id
     );
@@ -2578,9 +2672,19 @@ export default function App() {
       {/* TELA DE ENTRAR / CRIAR CONTA (entrega 1) */}
       <TelaAuth
         aberto={authAberto}
-        onFechar={() => setAuthAberto(false)}
+        motivo={motivoDoAuth}
+        onFechar={() => {
+          setAuthAberto(false);
+          // O motivo é do pedido atual. Limpar aqui evita que a tela
+          // seguinte mostre o aviso do contato sem ser o contato.
+          setMotivoDoAuth(undefined);
+        }}
         onEntrou={async () => {
           setAuthAberto(false);
+          // O motivo era do pedido que abriu a tela. Entrando, ele
+          // já cumpriu o papel — e a tela seguinte não deve mostrar
+          // o aviso do contato.
+          setMotivoDoAuth(undefined);
           const entrou = await lerSessaoAtual();
           setSessao(entrou);
 
