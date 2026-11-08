@@ -29,6 +29,7 @@ import {
   horasMaximasDaBusca,
   textoDoPreco,
   TEXTO_SEM_RESULTADO,
+  TEXTO_SEM_PRODUTO,
   MSG_SEM_UF,
   type CriteriosDaBusca,
 } from './filtrosBusca';
@@ -491,8 +492,15 @@ test('HELPER: a dica do empty state cita as barreiras novas', () => {
   assert.match(d, /mais horas/);
 });
 
-test('EMPTY STATE: o texto é o que o Dono pediu', () => {
-  assert.equal(TEXTO_SEM_RESULTADO, 'Nenhuma máquina encontrada com esses critérios');
+test('EMPTY STATE: o texto da busca vazia da ficha é o que o Dono pediu', () => {
+  // mini-1.2f: quando a pessoa veio da ficha de busca, a mensagem
+  // passa a ser a que o Dono pediu — palavra por palavra.
+  assert.equal(
+    TEXTO_SEM_PRODUTO,
+    'No momento não temos o produto, enviaremos para você assim que chegar.'
+  );
+  // E o texto geral (que também é o da ficha) é o mesmo.
+  assert.equal(TEXTO_SEM_RESULTADO, TEXTO_SEM_PRODUTO);
 });
 
 // ═══════════════════════════════════════════════════════════════════

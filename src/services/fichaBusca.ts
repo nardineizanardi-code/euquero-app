@@ -388,6 +388,20 @@ export const vistaDaFicha = (
 };
 
 /**
+ * mini-1.2f: o resultado da gravação.
+ *
+ * `quantidade` é quantos anúncios casam com os critérios. Quem
+ * calcula é quem tem a lista — o App. Ela viaja junto do `ok` para
+ * que a ficha possa dizer a verdade sem depender de um prop que
+ * ainda não recalculou.
+ */
+export interface ResultadoDaGravacao {
+  ok: boolean;
+  mensagem?: string;
+  quantidade?: number;
+}
+
+/**
  * Roda a gravação e devolve o estado final da ficha.
  *
  * É o que o `handleSubmitBuyer` chama. A regra do duplo-clique mora
@@ -396,10 +410,10 @@ export const vistaDaFicha = (
  * pessoa toca duas vezes (ou quando o Supabase demora).
  */
 export const tentarSalvarBusca = async (params: {
-  gravar: () => Promise<{ ok: boolean; mensagem?: string }>;
+  gravar: () => Promise<ResultadoDaGravacao>;
   jaEstaSalvando: boolean;
   aoMudar?: (vista: VistaFicha) => void;
-}): Promise<{ estado: EstadoFicha; vista: VistaFicha; resultado: { ok: boolean; mensagem?: string } | null }> => {
+}): Promise<{ estado: EstadoFicha; vista: VistaFicha; resultado: ResultadoDaGravacao | null }> => {
   // Duplo-clique: a segunda chamada sai sem tocar o banco.
   if (params.jaEstaSalvando) {
     return {

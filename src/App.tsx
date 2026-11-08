@@ -1339,7 +1339,7 @@ export default function App() {
 
   const handleCreateBuyerListing = async (
     newListingData: Omit<ListingItem, 'id' | 'createdAt' | 'status'>
-  ): Promise<{ ok: boolean; mensagem?: string }> => {
+  ): Promise<{ ok: boolean; mensagem?: string; quantidade?: number }> => {
     const rawId = (newListingData as any).id;
     const newItem: ListingItem = {
       ...newListingData,
@@ -1429,7 +1429,21 @@ export default function App() {
           setSearchQuery,
           setIntentFilter,
         });
-        return { ok: true };
+        // mini-1.2f: conta quantos anúncios casam AGORA, com a mesma
+        // função que a vitrine vai usar. Não dá para confiar na prop
+        // `filteredListings.length`: ela é um useMemo que ainda não
+        // recalculou neste tick, e o `setState` do filtro não é
+        // atômico com este return.
+        const quantidade = aplicarFiltro(
+          juntarAnuncios(listings, backend.publicos),
+          preparacao.filtros,
+          {
+            casarCategoria: (item, categoria) =>
+              isItemInCategory(item as unknown as ListingItem, categoria),
+            casarTermo: (termo, item) => termoCasaNoAnuncio(termo, item),
+          }
+        ).length;
+        return { ok: true, quantidade };
       } catch (e) {
         desfazerEspelho();
         const mensagem =
@@ -2433,6 +2447,15 @@ export default function App() {
         onSubmitListing={handleCreateListing}
         onSubmitBuyerListing={handleCreateBuyerListing}
         ufPadrao={sessao?.state}
+        onVerResultados={() => {
+          // mini-1.2f: leva a pessoa até a vitrine. Sem isto, fechar o
+          // modal a deixa no TOPO da Home, sem ver os anúncios.
+          setTimeout(() => {
+            document
+              .getElementById('feed-container')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 60);
+        }}
         onViewMatches={() => {}}
       />
 

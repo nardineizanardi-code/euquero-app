@@ -276,10 +276,16 @@ describe('mini-1.2 · falha no Supabase não deixa busca duplicada', () => {
     // O `catch` que importa é o que envolve o `await backend.salvar`.
     const posSalvar = corpo.indexOf('await backend.salvar');
     assert.ok(posSalvar > 0, 'não achei o await backend.salvar');
-    // Ancorar no `return { ok: true }` do caminho de sucesso: o catch
-    // logo depois é o do `backend.salvar`. Sem essa âncora, o
+    // Ancorar no `return { ok: true ... }` do caminho de sucesso: o
+    // catch logo depois é o do `backend.salvar`. Sem essa âncora, o
     // `catch (e) {}` do localStorage (que vem antes) seria achado.
-    const posOk = corpo.indexOf('return { ok: true };', posSalvar);
+    //
+    // mini-1.2f: o retorno passou a ser `{ ok: true, quantidade }`,
+    // então a âncora não pode ser a string exata.
+    const depois = corpo.slice(posSalvar);
+    const achado = depois.match(/return \{ ok: true[,}]/);
+    assert.ok(achado?.index != null, 'não achei o retorno de sucesso');
+    const posOk = posSalvar + achado.index;
     assert.ok(posOk > posSalvar, 'não achei o retorno de sucesso');
     const posCatch = corpo.indexOf('catch', posOk);
     assert.ok(posCatch > posOk, 'não achei o catch do backend.salvar');
