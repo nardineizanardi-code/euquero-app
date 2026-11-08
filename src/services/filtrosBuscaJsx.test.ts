@@ -352,8 +352,19 @@ test('PREÇO: o insert manda 0 porque a coluna é not null', () => {
 // O EMPTY STATE
 // ═══════════════════════════════════════════════════════════════════
 
-test('EMPTY STATE: o texto é o que o Dono pediu', () => {
-  assert.match(filtros, /TEXTO_SEM_RESULTADO = 'Nenhuma máquina encontrada com esses critérios'/);
+test('EMPTY STATE: o texto da busca vazia da ficha é o que o Dono pediu', () => {
+  // mini-1.2f: a tela de resultados da ficha usa o texto novo.
+  // O texto do Dono está no fonte — com a constante referenciando a
+  // outra, por isso a checagem é pelo VALOR da string.
+  assert.match(
+    filtros,
+    /'No momento não temos o produto, enviaremos para você assim que chegar\.'/
+  );
+  // E o texto geral continua existindo para as outras telas.
+  assert.match(
+    filtros,
+    /TEXTO_SEM_RESULTADO =\s*'No momento não temos o produto, enviaremos para você assim que chegar\.'/
+  );
   assert.match(app, /\{\s*TEXTO_SEM_RESULTADO\s*\}/);
   assert.match(app, /\{\s*dicaDoEmptyState\(filtrosDaFicha\)\s*\}/);
 });

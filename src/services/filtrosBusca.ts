@@ -290,7 +290,19 @@ export const aplicarFiltro = (
 
 /** O texto do empty state. Fica aqui para ser testado e para não
  * depender de JSX. */
-export const TEXTO_SEM_RESULTADO = 'Nenhuma máquina encontrada com esses critérios';
+/**
+ * mini-1.2f: o texto do empty state da BUSCA.
+ *
+ * A frase é a que o Dono pediu, palavra por palavra. Antes era
+ * "Nenhuma máquina encontrada com esses critérios" — que descrevia o
+ * filtro e não dizia o que acontece com a busca da pessoa.
+ *
+ * Este texto só é usado no empty state da ficha de busca. As demais
+ * telas mantêm a mensagem geral de "nenhum ativo nesta categoria".
+ */
+export const TEXTO_SEM_RESULTADO =
+  'No momento não temos o produto, enviaremos para você assim que chegar.';
+
 
 /** A dica do empty state: o que a pessoa pode afrouxar. */
 export const dicaDoEmptyState = (f: FiltrosAplicados): string => {
@@ -741,4 +753,77 @@ export const calcularAfrouxamento = (
     removidos,
     filtros: afrouxarFiltros(f, removidos),
   };
+};
+
+/**
+ * ─────────────────────────────────────────────────────────────────────
+ * mini-1.2f — O QUE ACONTECE DEPOIS DE CLICAR "BUSCAR MÁQUINAS"
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * O bug: o `handleSubmitBuyer` fazia `setBuyerSuccess(true)` E
+ * `onClose()` na mesma linha. O `onClose()` desmonta o modal
+ * (`if (!isOpen) return null`), então a tela de sucesso — que tem o
+ * botão "Ver Máquinas Disponíveis" — NUNCA aparecia. A pessoa voltava
+ * para a Home sem resultados, e sem a tela que leva aos resultados.
+ *
+ * A decisão fica aqui, numa função pura, para poder ser testada sem
+ * DOM. Três saídas possíveis:
+ *
+ *  - 'erro':     a gravação falhou. A ficha fica ABERTA, com a
+ *                mensagem, e a pessoa pode tentar de novo.
+ *  - 'resultados': a gravação deu certo. A ficha fecha e a Home
+ *                mostra os anúncios que batem com os critérios.
+ *  - 'vazio':    a gravação deu certo mas não há anúncio compatível.
+ *                A Home mostra a mensagem de "ainda não temos".
+ *
+ * A diferença entre 'resultados' e 'vazio' é decidida AQUI, e não
+ * dentro do modal — porque quem sabe quantos anúncios casam é o
+ * App, que tem a lista. O modal só precisa saber se deve fechar.
+ */
+
+/** O texto que o Dono pediu para o caso sem resultado. */
+export const TEXTO_SEM_PRODUTO = TEXTO_SEM_RESULTADO;
+
+/** O que fazer depois que o botão "Buscar Máquinas" foi acionado. */
+export type DecisaoAposBuscar =
+  | { tipo: 'erro'; mensagem: string }
+  | { tipo: 'resultados'; quantidade: number }
+  | { tipo: 'vazio'; quantidade: number };
+
+/**
+ * Decide o que fazer depois do submit.
+ *
+ * @param resultado o que o App devolveu da gravação
+ */
+export const decidirAposBuscar = (
+  resultado: { ok: boolean; mensagem?: string; quantidade?: number } | null
+): DecisaoAposBuscar => {
+  if (!resultado || !resultado.ok) {
+    return {
+      tipo: 'erro',
+      mensagem:
+        resultado?.mensagem ??
+        'Erro ao salvar busca. Tente novamente.',
+    };
+  }
+  // A quantidade vem do RESULTADO — quem tem a lista calcula. Um
+  // segundo parâmetro seria uma chance de as duas discordarem.
+  const quantidade = resultado.quantidade ?? 0;
+  if (quantidade > 0) {
+    return { tipo: 'resultados', quantidade };
+  }
+  return { tipo: 'vazio', quantidade };
+};
+
+/**
+ * O texto que a tela de resultados mostra quando não há nada.
+ *
+ * Quando veio da ficha, é o texto do Dono. Sem ficha, segue a
+ * mensagem geral de sempre.
+ */
+export const textoDoEmptyState = (veioDaFicha: boolean): string => {
+  if (!veioDaFicha) {
+    return 'Nenhum ativo encontrado nesta categoria.';
+  }
+  return TEXTO_SEM_PRODUTO;
 };

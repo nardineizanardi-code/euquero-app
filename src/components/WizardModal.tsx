@@ -30,6 +30,8 @@ import {
   // mini-1.2e: a UF do perfil só vale se for uma das 27.
   ufDoPerfilValida,
   precisaSelecionarUf,
+  // mini-1.2f: o texto que o Dono pediu para o caso sem produto.
+  TEXTO_SEM_PRODUTO,
 } from '../services/filtrosBusca';
 
 export type FrotaCategoryType = 'linha_amarela' | 'agricola' | 'caminhao' | 'implementos';
@@ -43,6 +45,17 @@ export type FrotaCategoryType = 'linha_amarela' | 'agricola' | 'caminhao' | 'imp
 export interface ResultadoSalvarBusca {
   ok: boolean;
   mensagem?: string;
+  /**
+   * mini-1.2f: quantos anúncios casam com os critérios da busca.
+   *
+   * Vem no RESULTADO, e não por prop, por um motivo concreto: os
+   * `setState` do App (que aplicam o filtro) e do modal (que mostra a
+   * tela de sucesso) não são atômicos. Se a quantidade viesse por
+   * prop, o modal mostraria o número ANTIGO — zero, na maioria das
+   * vezes — e a pessoa leria "não achamos nada" mesmo havendo
+   * resultado.
+   */
+  quantidade?: number;
 }
 
 interface WizardModalProps {
@@ -65,6 +78,14 @@ interface WizardModalProps {
    * pessoa escolher (sem cair em 'BR' automaticamente).
    */
   ufPadrao?: string;
+  /**
+   * mini-1.2f: leva a pessoa para os resultados.
+   *
+   * O `onClose` só fecha o modal — com a pessoa no TOPO da Home, longe
+   * dos anúncios. Este callback é o que fecha E leva até a vitrine,
+   * que é o que o botão "Ver as máquinas disponíveis" promete.
+   */
+  onVerResultados?: () => void;
   onViewMatches?: (matches: MatchResult[]) => void;
   onOpenChatWithSeller?: (item: ListingItem) => void;
 }
@@ -76,6 +97,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   onSubmitListing,
   onSubmitBuyerListing,
   ufPadrao,
+  onVerResultados,
 }) => {
   const [intent, setIntent] = useState<IntentType>(initialIntent);
 
@@ -130,6 +152,14 @@ export const WizardModal: React.FC<WizardModalProps> = ({
   const [buyerBudget, setBuyerBudget] = useState<string>('');
   const [buyerPaymentMethod, setBuyerPaymentMethod] = useState<string>('');
   const [buyerSuccess, setBuyerSuccess] = useState<boolean>(false);
+  /**
+   * mini-1.2f: o que a busca devolveu — quantos anúncios casam.
+   * Vem do App, que tem a lista. Serve para a tela de sucesso dizer
+   * a verdade em vez de prometer uma máquina fixa.
+   */
+  const [resultadoBusca, setResultadoBusca] = useState<{
+    quantidade: number;
+  } | null>(null);
 
   // =========================================================================
   // CAMPOS COMUNS DO VENDEDOR (QUERO VENDER - FREEMIUM / TAXA R$ 19,90)
@@ -514,7 +544,7 @@ export const WizardModal: React.FC<WizardModalProps> = ({
     // Ela é pura e testada; aqui só aplicamos o resultado.
     let estado: 'pronta' | 'salvando' | 'erro' = 'pronta';
     let vista = vistaDaFicha('pronta');
-    let resultado: { ok: boolean; mensagem?: string } | null = null;
+    let resultado: { ok: boolean; mensagem?: string; quantidade?: number } | null = null;
     try {
       ({ estado, vista, resultado } = await tentarSalvarBusca({
       jaEstaSalvando,
@@ -579,11 +609,22 @@ export const WizardModal: React.FC<WizardModalProps> = ({
     }
 
     if (resultado?.ok) {
-      // Sucesso confirmado pelo App.tsx (que esperou o Supabase).
-      // Fecha a ficha e devolve a pessoa à Home, que já é a tela
-      // de resultados do app.
+      // mini-1.2f: o BUG ERA AQUI.
+      //
+      // Este bloco fazia `setBuyerSuccess(true)` E `onClose()` juntos.
+      // O `onClose()` desmonta o modal (`if (!isOpen) return null`),
+      // então a tela de sucesso — que tem o botão "Ver Máquinas
+      // Disponíveis" — NUNCA era renderizada. A pessoa voltava para a
+      // Home e não via nem os cards nem a tela que leva aos cards.
+      //
+      // Agora o `onClose()` fica com o botão da tela de sucesso, que
+      // é onde a pessoa decide ir ver os resultados. Aqui só
+      // registramos que deu certo.
+      // mini-1.2f: a quantidade vem do RESULTADO da gravação, não da
+      // prop — o retorno carrega o número exato, calculado no mesmo
+      // instante em que o filtro foi aplicado.
+      setResultadoBusca({ quantidade: resultado.quantidade ?? 0 });
       setBuyerSuccess(true);
-      onClose();
     }
   };
 
@@ -2402,28 +2443,46 @@ Comprimento (opcional):
                   Pronto! Seu pedido foi registrado.
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 mt-2 max-w-md mx-auto leading-relaxed">
-                  Localizamos máquinas compatíveis com a <strong>CAT 320D (Paulínia/SP)</strong> com vídeo verificado <strong>100% liberado direto</strong> para você assistir e chamar o vendedor no WhatsApp!
+                  {resultadoBusca?.quantidade ? (
+                    <>
+                      Encontramos <strong>{resultadoBusca.quantidade}</strong>{' '}
+                      {resultadoBusca.quantidade === 1 ? 'máquina' : 'máquinas'}{' '}
+                      que <strong>combinam com os critérios que você pediu</strong>. Toque no
+                      botão abaixo para ver os anúncios com as fotos.
+                    </>
+                  ) : (
+                    <>
+                      <strong>{TEXTO_SEM_PRODUTO}</strong>
+                    </>
+                  )}
                 </p>
               </div>
 
               <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-left space-y-1.5 max-w-md mx-auto text-xs text-emerald-950">
                 <div className="font-bold flex items-center gap-1.5 text-emerald-900">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Dados salvos em comprador_dados:</span>
+                  <span>Critérios registrados:</span>
                 </div>
                 <p>• <strong>Categoria:</strong> {currentDetails.catEmoji} {currentDetails.catName}</p>
-                <p>• <strong>Máquina:</strong> {currentDetails.machineLabel} ({currentDetails.anoStr})</p>
-                <p>• <strong>Comprador:</strong> {buyerName} · {buyerPhone}</p>
-                <p>• <strong>Orçamento:</strong> R$ {buyerBudget} em {buyerCity}</p>
+                <p>• <strong>Máquina:</strong> {currentDetails.machineLabel}{currentDetails.anoStr ? ` (a partir de ${currentDetails.anoStr})` : ''}</p>
+                <p>• <strong>Orçamento:</strong> {buyerBudget.trim() || 'não informado'}{buyerCity.trim() ? ` · ${buyerCity.trim()}` : ''}</p>
               </div>
 
               <div className="pt-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => {
+                    // mini-1.2f: fecha E leva para a vitrine. Só
+                    // fechar deixaria a pessoa no topo da Home, sem
+                    // ver os anúncios.
+                    onVerResultados?.();
+                    onClose();
+                  }}
                   className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#00875A] hover:bg-emerald-700 text-white font-black text-sm cursor-pointer shadow-lg transition-transform active:scale-95"
                 >
-                  Ver Máquinas Disponíveis (Vídeo Liberado) ➔
+                  {resultadoBusca?.quantidade
+                    ? 'Ver as máquinas disponíveis ➔'
+                    : 'Ver quando houver resultados ➔'}
                 </button>
               </div>
             </div>
