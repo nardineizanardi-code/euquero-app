@@ -66,9 +66,11 @@ import {
   decidirEscopoRegional,
   avisoDoEscopo,
   ordenarPorProximidade,
+  passaNoEscopoRegional,
+  anunciosDaVitrine,
   resolverUfDoComprador,
   resolverCidadeDoComprador,
-  ufDoAnuncio,
+  estaAtivo,
   type EscopoRegional,
 } from './services/buscaConversacional';
 import {
@@ -1612,26 +1614,31 @@ export default function App() {
     // O TERMO (a busca conversacional).
     // O motor devolve o conjunto de anúncios que casam com a FRASE
     // — ou com os pedaços dela ("Escavadeira 20 toneladas" acha a
-    // escavadeira de 20 t). O item entra se a frase inteira aparece
-    // nele (o jeito de sempre, que é o caminho rápido) ou se ele está
-    // no conjunto que o motor montou.
+    // escavadeira de 20 t). O conjunto é montado sobre o catálogo
+    // INTEIRO, igual ao que o motor usou na hora da busca: é assim
+    // que a contagem da escada regional e a tela contam as mesmas
+    // coisas.
     const idsDoTermo = searchQuery.trim()
-      ? new Set(anunciosDoTermo(categoryListings, searchQuery).map((item) => item.id))
+      ? new Set(anunciosDoTermo(listingsCombinados, searchQuery).map((item) => item.id))
       : null;
 
     const filtrados = categoryListings
       .filter((item) => {
+        // O ANÚNCIO ATIVO (correção da auditoria): o que está
+        // encerrado ou pausado não aparece na vitrine — e a contagem
+        // da escada regional também não conta com ele.
+        if (!estaAtivo(item)) return false;
+
         if (intentFilter !== 'all' && item.intent !== intentFilter) return false;
 
         // A REGIÃO DA PESSOA (regra nova): enquanto a busca está
         // valendo, quem manda é o alcance regional — a região dela
         // primeiro, os vizinhos depois, e o Brasil todo por último.
-        if (escopoRegional) {
-          if (escopoRegional.nivel !== 'brasil') {
-            const uf = ufDoAnuncio(item);
-            if (uf && !escopoRegional.estados.includes(uf)) return false;
-          }
-        } else if (geoScopeFilter === 'so_sc') {
+        // Anúncio sem UF identificável NÃO passa nos degraus
+        // restritos: ele não é da região nem dos vizinhos.
+        if (!passaNoEscopoRegional(item, escopoRegional)) return false;
+
+        if (!escopoRegional && geoScopeFilter === 'so_sc') {
           // FILTRO DE GEOGRAFIA DO TOPO (PONTO 5):
           const st = (item.locationState || '').trim().toUpperCase();
           if (st !== 'SC' && !item.locationCity.toUpperCase().includes('/SC')) {
@@ -1816,8 +1823,31 @@ export default function App() {
     }
 
     // O que a FRASE acha no catálogo inteiro — sem categoria, sem
-    // geografia. É com esse conjunto que a região é contada.
-    const candidatos = anunciosDoTermo(listingsCombinados, limpo);
+    // geografia. É com este conjunto que a região é contada.
+    const porTermo = anunciosDoTermo(listingsCombinados, limpo);
+
+    // A categoria não pode esconder o resultado da busca: se nenhum
+    // anúncio do termo é da categoria que está valendo, a categoria
+    // abre para todas.
+    const temNaCategoria = porTermo.some((item) => isItemInCategory(item, selectedCategory));
+    const categoriaEfetiva = selectedCategory === 'all' || temNaCategoria ? selectedCategory : 'all';
+    if (categoriaEfetiva !== selectedCategory) {
+      setSelectedCategory('all');
+    }
+
+    // A CONTAGEM DA ESCADA (correção da auditoria).
+    //
+    // A escada precisa contar SÓ o que vai aparecer na vitrine. Por
+    // isso a contagem passa pelo MESMO filtro da tela — ativo,
+    // intenção vigente e categoria efetiva — em vez de contar o
+    // catálogo cru. Sem isso, três anúncios de "procura" (intent
+    // 'buy') ou três anúncios já encerrados (status 'closed') faziam
+    // a busca achar que a região tinha resultado suficiente e parar
+    // ali, mostrando uma tela vazia para quem queria comprar.
+    const candidatos = anunciosDaVitrine(porTermo, {
+      categoria: categoriaEfetiva,
+      intencao: intentFilter,
+    });
 
     // A REGIÃO DA PESSOA: o perfil logado, a procura que ela já
     // registrou, ou o hub do EuQuero (SC).
@@ -1834,12 +1864,6 @@ export default function App() {
       anuncios: candidatos,
     });
     setEscopoRegional(escopo);
-
-    // A categoria não pode esconder o resultado da busca.
-    const temNaCategoria = candidatos.some((item) => isItemInCategory(item, selectedCategory));
-    if (selectedCategory !== 'all' && !temNaCategoria) {
-      setSelectedCategory('all');
-    }
 
     // O controle de geografia do topo ("Só SC") é do dono do app. A
     // busca da Home fala com o alcance REGIONAL da pessoa, então o

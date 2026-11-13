@@ -229,6 +229,21 @@ describe('mini-1.2 · getCategoryDetails não inventa modelo', () => {
 describe('mini-1.2 · o termo de busca chega na tela de resultados', () => {
   const app = readFileSync(resolvePath(aqui, '../App.tsx'), 'utf8');
 
+  /**
+   * Recorta um trecho do fonte entre duas âncoras de linha inteira.
+   *
+   * Âncoras textuais são mais estáveis do que contar chaves: o
+   * `useMemo` e os callbacks do App têm `{` dentro de tipos, de
+   * destructuring e de JSX, e a contagem erra.
+   */
+  const trecho = (fonteApp: string, inicio: string, fim: string): string => {
+    const i = fonteApp.indexOf(inicio);
+    assert.ok(i > -1, `não achei o início: ${inicio}`);
+    const j = fonteApp.indexOf(fim, i);
+    assert.ok(j > -1, `não achei o fim: ${fim}`);
+    return fonteApp.slice(i, j + fim.length);
+  };
+
   it('App.tsx aplica termoCasaNoAnuncio no filtro real da vitrine', () => {
     // A REGRA (o filtro da vitrine chamar `termoCasaNoAnuncio` com o
     // termo e o anúncio) é o que este teste trava. A FORMA da linha
@@ -240,6 +255,61 @@ describe('mini-1.2 · o termo de busca chega na tela de resultados', () => {
       app,
       /!termoCasaNoAnuncio\(searchQuery, item\)/,
       'o filtro da vitrine não usa termoCasaNoAnuncio'
+    );
+  });
+
+  it('a chamada do termo fica DENTRO do filtro efetivo da vitrine', () => {
+    // Tarefa 1.3b: o teste acima bisa que a CHAMADA existe no fonte.
+    // Isso não basta — a chamada pode estar fora do filtro, e aí o
+    // termo deixa de filtrar a tela. Este teste confere que a chamada
+    // está dentro do `.filter((item) => { ... })` que decide o que
+    // aparece na vitrine.
+    const bloco = trecho(app, 'const filtrados = categoryListings', '.map((item) => ({');
+
+    const iFiltro = bloco.indexOf('.filter((item) => {');
+    assert.ok(iFiltro > -1, 'não achei o filtro efetivo da vitrine');
+
+    const iTermo = bloco.indexOf('termoCasaNoAnuncio(searchQuery, item)');
+    assert.ok(iTermo > -1, 'o filtro efetivo da vitrine não usa termoCasaNoAnuncio');
+    assert.ok(
+      iTermo > iFiltro,
+      'a chamada do termo está FORA do filtro efetivo da vitrine'
+    );
+  });
+
+  it('o filtro efetivo da vitrine carrega o anúncio ATIVO e o alcance regional', () => {
+    // Tarefa 1.3b: as duas correções da auditoria precisam ficar
+    // presas no filtro da tela — o anúncio encerrado não aparece, e o
+    // alcance regional (que barra o anúncio sem UF) é aplicado ali.
+    const bloco = trecho(app, 'const filtrados = categoryListings', '.map((item) => ({');
+
+    assert.match(
+      bloco,
+      /estaAtivo\(item\)/,
+      'o filtro da vitrine não filtra o anúncio encerrado/pausado'
+    );
+    assert.match(
+      bloco,
+      /passaNoEscopoRegional\(item, escopoRegional\)/,
+      'o filtro da vitrine não aplica o alcance regional'
+    );
+  });
+
+  it('a contagem da escada regional passa pelo MESMO filtro da vitrine', () => {
+    // Se a contagem contar o catálogo cru e a tela contar oEffective,
+    // a escada decide "a região tem resultado" e a tela mostra vazio.
+    // As duas têm que usar o mesmo filtro.
+    const bloco = trecho(app, 'const handleBuscaPrincipal', 'const handleEscolherCategoria');
+
+    assert.match(
+      bloco,
+      /anunciosDaVitrine\(/,
+      'a contagem da escada regional não passa pelo filtro da vitrine'
+    );
+    assert.match(
+      bloco,
+      /decidirEscopoRegional\(/,
+      'a escada regional não está sendo decidida'
     );
   });
 

@@ -10,6 +10,9 @@ import {
   decidirEscopoRegional,
   avisoDoEscopo,
   ordenarPorProximidade,
+  estaAtivo,
+  anunciosDaVitrine,
+  passaNoEscopoRegional,
   MINIMO_LOCAL,
 } from './buscaConversacional';
 
@@ -288,5 +291,196 @@ describe('ordenarPorProximidade', () => {
   it('sem escopo, a ordem original é preservada', () => {
     const original = [{ id: 'b' }, { id: 'a' }];
     assert.deepEqual(ordenarPorProximidade(original, null), original);
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════
+   TAREFA 1.3b — AS CORREÇÕES QUE A AUDITORIA PEDIU
+   ════════════════════════════════════════════════════════════════════ */
+
+describe('estaAtivo — o anúncio que realmente está no jogo', () => {
+  it('anúncio encerrado NÃO está ativo', () => {
+    assert.equal(estaAtivo({ status: 'closed' }), false);
+  });
+
+  it('anúncio pausado NÃO está ativo', () => {
+    assert.equal(estaAtivo({ status: 'active', isPaused: true }), false);
+  });
+
+  it('em negociação e com match continuam ativos (o EloMatch)', () => {
+    assert.equal(estaAtivo({ status: 'in_negotiation' }), true);
+    assert.equal(estaAtivo({ status: 'matched' }), true);
+    assert.equal(estaAtivo({ status: 'active' }), true);
+  });
+
+  it('anúncio sem status gravado vale (não se esconde por falta de dado)', () => {
+    assert.equal(estaAtivo({}), true);
+    assert.equal(estaAtivo({ status: null }), true);
+  });
+});
+
+describe('anunciosDaVitrine — o filtro que a contagem e a tela compartilham', () => {
+  const catalogo = [
+    { id: 'sell-sc', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+    { id: 'buy-sc', intent: 'buy', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+    { id: 'sell-pr', intent: 'sell', category: 'caminhao', locationState: 'PR', status: 'active' },
+    { id: 'sell-fechado', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'closed' },
+  ];
+
+  it('na intenção "À Venda" (sell) só conta o que é à venda', () => {
+    const vistos = anunciosDaVitrine(catalogo, { intencao: 'sell' });
+    assert.deepEqual(vistos.map((a) => a.id), ['sell-sc', 'sell-pr']);
+  });
+
+  it('na intenção "Todos" as duas intenções contam', () => {
+    const vistos = anunciosDaVitrine(catalogo, { intencao: 'all' });
+    assert.deepEqual(vistos.map((a) => a.id), ['sell-sc', 'buy-sc', 'sell-pr']);
+  });
+
+  it('anúncio encerrado não conta (está ativo?)', () => {
+    const vistos = anunciosDaVitrine(catalogo, { intencao: 'all' });
+    assert.equal(vistos.some((a) => a.id === 'sell-fechado'), false);
+  });
+
+  it('a categoria em vigor também vale', () => {
+    const vistos = anunciosDaVitrine(catalogo, { intencao: 'all', categoria: 'caminhao' });
+    assert.deepEqual(vistos.map((a) => a.id), ['sell-pr']);
+  });
+
+  it('sem filtro nenhum, o catálogo inteiro passa (menos o que está fora do jogo)', () => {
+    const vistos = anunciosDaVitrine(catalogo, {});
+    assert.equal(vistos.length, 3);
+  });
+});
+
+describe('passaNoEscopoRegional — o furo da UF vazia', () => {
+  const escopoDaRegiao = decidirEscopoRegional({
+    uf: 'SC',
+    anuncios: [{ locationState: 'SC' }, { locationState: 'SC' }, { locationState: 'SC' }],
+  });
+  const escopoDosVizinhos = decidirEscopoRegional({
+    uf: 'SC',
+    anuncios: [{ locationState: 'SC' }, { locationState: 'PR' }, { locationState: 'PR' }],
+  });
+  const escopoDoBrasil = decidirEscopoRegional({
+    uf: 'SC',
+    anuncios: [{ locationState: 'MG' }],
+  });
+
+  it('anúncio SEM UF não passa no degrau da região', () => {
+    assert.equal(escopoDaRegiao.nivel, 'regiao');
+    assert.equal(
+      passaNoEscopoRegional({ locationState: null, locationCity: 'Algum lugar' }, escopoDaRegiao),
+      false,
+      'anúncio sem UF vazou na busca regional'
+    );
+  });
+
+  it('anúncio SEM UF também não passa no degrau dos vizinhos', () => {
+    assert.equal(escopoDosVizinhos.nivel, 'vizinhos');
+    assert.equal(
+      passaNoEscopoRegional({ locationState: '', locationCity: 'Algum lugar' }, escopoDosVizinhos),
+      false,
+      'anúncio sem UF vazou no degrau dos vizinhos'
+    );
+  });
+
+  it('anúncio sem UF e cidade sem UF também é barrado', () => {
+    assert.equal(
+      passaNoEscopoRegional({ locationState: null, locationCity: 'Rondonópolis' }, escopoDaRegiao),
+      false
+    );
+  });
+
+  it('no degrau do Brasil todo, o anúncio sem UF volta', () => {
+    assert.equal(escopoDoBrasil.nivel, 'brasil');
+    assert.equal(
+      passaNoEscopoRegional({ locationState: null, locationCity: 'Algum lugar' }, escopoDoBrasil),
+      true,
+      'no Brasil todo ninguém é barrado por falta de UF'
+    );
+  });
+
+  it('anúncio da região passa', () => {
+    assert.equal(passaNoEscopoRegional({ locationState: 'SC' }, escopoDaRegiao), true);
+  });
+
+  it('anúncio de fora da região e dos vizinhos não passa', () => {
+    assert.equal(passaNoEscopoRegional({ locationState: 'MG' }, escopoDaRegiao), false);
+  });
+
+  it('sem escopo, todo mundo passa', () => {
+    assert.equal(passaNoEscopoRegional({ locationState: null }, null), true);
+  });
+
+  it('a UF continua vindo da cidade quando o estado não veio', () => {
+    assert.equal(passaNoEscopoRegional({ locationCity: 'Joinville/SC' }, escopoDaRegiao), true);
+  });
+});
+
+describe('a escada regional com o filtro da vitrine', () => {
+  it('3 anúncios de PROCURA em SC não param a busca na região (intenção = à venda)', () => {
+    // A contagem ANTES aplicava o filtro de "Venda": ela via 3
+    // anúncios e achava que a região tinha resultado. Como eram
+    // procuras (intent 'buy'), a tela não mostrava nenhum deles.
+    const doTermo = [
+      { id: 'b1', intent: 'buy', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+      { id: 'b2', intent: 'buy', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+      { id: 'b3', intent: 'buy', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+    ];
+
+    const escopo = decidirEscopoRegional({
+      uf: 'SC',
+      anuncios: anunciosDaVitrine(doTermo, { intencao: 'sell' }),
+    });
+
+    assert.equal(escopo.nivel, 'brasil', 'a busca parou na região contando announcement que não apareceria');
+    assert.equal(escopo.naRegiao, 0);
+  });
+
+  it('3 anúncios ENCERRADOS em SC também não param a busca na região', () => {
+    const doTermo = [
+      { id: 'f1', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'closed' },
+      { id: 'f2', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'closed' },
+      { id: 'f3', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'closed' },
+    ];
+
+    const escopo = decidirEscopoRegional({
+      uf: 'SC',
+      anuncios: anunciosDaVitrine(doTermo, { intencao: 'sell' }),
+    });
+
+    assert.equal(escopo.nivel, 'brasil');
+    assert.equal(escopo.naRegiao, 0);
+  });
+
+  it('com 3 anúncios à venda e ativos em SC, a busca fica na região', () => {
+    const doTermo = [
+      { id: 'v1', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+      { id: 'v2', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+      { id: 'v3', intent: 'sell', category: 'linha_amarela', locationState: 'SC', status: 'active' },
+    ];
+
+    const escopo = decidirEscopoRegional({
+      uf: 'SC',
+      anuncios: anunciosDaVitrine(doTermo, { intencao: 'sell' }),
+    });
+
+    assert.equal(escopo.nivel, 'regiao');
+    assert.equal(escopo.naRegiao, 3);
+  });
+
+  it('anúncio sem UF não entra na contagem da região', () => {
+    const escopo = decidirEscopoRegional({
+      uf: 'SC',
+      anuncios: [
+        { id: 's1', locationState: 'SC' },
+        { id: 's2', locationState: 'SC' },
+        { id: 's3', locationState: 'SC' },
+        { id: 'sem-uf', locationState: null, locationCity: 'Algum lugar' },
+      ],
+    });
+    assert.equal(escopo.naRegiao, 3);
+    assert.equal(escopo.total, 4);
   });
 });
