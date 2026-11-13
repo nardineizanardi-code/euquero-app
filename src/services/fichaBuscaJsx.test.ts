@@ -230,10 +230,26 @@ describe('mini-1.2 · o termo de busca chega na tela de resultados', () => {
   const app = readFileSync(resolvePath(aqui, '../App.tsx'), 'utf8');
 
   it('App.tsx aplica termoCasaNoAnuncio no filtro real da vitrine', () => {
+    // A REGRA (o filtro da vitrine chamar `termoCasaNoAnuncio` com o
+    // termo e o anúncio) é o que este teste trava. A FORMA da linha
+    // não é: na Tarefa 1.3 a condição ganhou a leitura conversacional
+    // ao lado (`anunciosDoTermo`), e a linha deixou de caber em uma
+    // linha só. A regra continua valendo — e há um teste novo, no
+    // `buscaConversacional.test.ts`, para a parte conversacional.
     assert.match(
       app,
-      /if \(searchQuery\.trim\(\) && !termoCasaNoAnuncio\(searchQuery, item\)\) return false;/,
+      /!termoCasaNoAnuncio\(searchQuery, item\)/,
       'o filtro da vitrine não usa termoCasaNoAnuncio'
+    );
+  });
+
+  it('a leitura conversacional também entra no filtro real da vitrine', () => {
+    // A busca conversacional (frase inteira OU pedaços dela) é o que
+    // faz "Escavadeira 20 toneladas" achar a escavadeira de 20 t.
+    assert.match(
+      app,
+      /anunciosDoTermo\(/,
+      'o filtro da vitrine não usa a leitura conversacional'
     );
   });
 

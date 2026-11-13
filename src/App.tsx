@@ -50,10 +50,10 @@ import {
   useAnunciosBackend,
   juntarAnuncios,
 } from './services/useAnunciosBackend';
-import { 
-  Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare, 
+import {
+  Flame, ChevronDown, ChevronUp, Sparkles, MessageSquare,
   Heart, ArrowRight, Eye, RefreshCw, Layers, SearchX, X,
-  AlertCircle
+  AlertCircle, MapPin
 } from 'lucide-react';
 
 import { ListingItem, MatchResult, ChatMessage, IntentType } from './types';
@@ -61,6 +61,16 @@ import { INITIAL_LISTINGS, INITIAL_CHATS } from './data/initialData';
 import { CATEGORIES, CATEGORY_CHIPS, isItemInCategory } from './data/categories';
 import { findMatches } from './utils/matchingEngine';
 import { termoCasaNoAnuncio } from './services/fichaBusca';
+import {
+  anunciosDoTermo,
+  decidirEscopoRegional,
+  avisoDoEscopo,
+  ordenarPorProximidade,
+  resolverUfDoComprador,
+  resolverCidadeDoComprador,
+  ufDoAnuncio,
+  type EscopoRegional,
+} from './services/buscaConversacional';
 import {
   prepararBusca,
   aplicarFiltrosNaTela,
@@ -347,37 +357,6 @@ const EhPaginaDeRedefinicao = (): boolean => {
   return ehRotaDeRedefinicao(window.location.pathname);
 };
 
-/**
- * ════════════════════════════════════════════════════════════════════════
- * O ESCOPO DA VITRINE, EM UM SÓ LUGAR
- * ════════════════════════════════════════════════════════════════════════
- *
- * A vitrine filtra por três coisas ao mesmo tempo: a CATEGORIA, a
- * INTENÇÃO (à venda / compradores) e a GEOGRAFIA.
- *
- * A busca da Home precisa saber se um termo tem resultado DENTRO do
- * escopo que está valendo — só então ela amplia o escopo, em vez de
- * devolver uma tela vazia sem explicação (ver `handleBuscaPrincipal`).
- *
- * Esta função é a MESMA regra que o `filteredListings` aplica. Ela não
- * inventa um filtro diferente do filtro: se as duas divergirem, a busca
- * prometeria um resultado que a tela não mostra.
- */
-const itemPassaNoEscopo = (
-  item: ListingItem,
-  categoria: string,
-  geo: 'so_sc' | 'brasil_todo' | 'perto_de_mim',
-  intencao: 'all' | 'buy' | 'sell'
-): boolean => {
-  if (categoria && categoria !== 'all' && !isItemInCategory(item, categoria)) return false;
-  if (intencao !== 'all' && item.intent !== intencao) return false;
-  if (geo === 'so_sc') {
-    const st = (item.locationState || '').trim().toUpperCase();
-    if (st !== 'SC' && !item.locationCity.toUpperCase().includes('/SC')) return false;
-  }
-  return true;
-};
-
 export default function App() {
   // Navigation: 'home' (Feed principal), 'chat' (Negociações diretas), 'meus_anuncios' (/meus-anuncios ou /painel-vendedor) ou 'editar_anuncio' (/editar-anuncio)
   const [currentView, setCurrentView] = useState<'home' | 'chat' | 'meus_anuncios' | 'editar_anuncio'>(() => {
@@ -411,6 +390,15 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('linha_amarela');
   const [intentFilter, setIntentFilter] = useState<'all' | 'buy' | 'sell'>('all');
+
+  // O ALCANCE REGIONAL DA BUSCA (regra de negócio da Tarefa 1.3)
+  //
+  // A busca da Home começa na região da pessoa. Se a região não tem
+  // anúncio suficiente, ela sobe para os estados vizinhos e, por
+  // último, para o Brasil todo — sempre avisando. enquanto este valor
+  // existe, ele manda na geografia da vitrine (o controle "Só SC" do
+  // topo é do dono do app, não da pessoa que busca).
+  const [escopoRegional, setEscopoRegional] = useState<EscopoRegional | null>(null);
 
   // Favorite items tracking
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
@@ -1621,12 +1609,30 @@ export default function App() {
       }));
     }
 
-    return categoryListings
+    // O TERMO (a busca conversacional).
+    // O motor devolve o conjunto de anúncios que casam com a FRASE
+    // — ou com os pedaços dela ("Escavadeira 20 toneladas" acha a
+    // escavadeira de 20 t). O item entra se a frase inteira aparece
+    // nele (o jeito de sempre, que é o caminho rápido) ou se ele está
+    // no conjunto que o motor montou.
+    const idsDoTermo = searchQuery.trim()
+      ? new Set(anunciosDoTermo(categoryListings, searchQuery).map((item) => item.id))
+      : null;
+
+    const filtrados = categoryListings
       .filter((item) => {
         if (intentFilter !== 'all' && item.intent !== intentFilter) return false;
 
-        // FILTRO DE GEOGRAFIA DO TOPO (PONTO 5):
-        if (geoScopeFilter === 'so_sc') {
+        // A REGIÃO DA PESSOA (regra nova): enquanto a busca está
+        // valendo, quem manda é o alcance regional — a região dela
+        // primeiro, os vizinhos depois, e o Brasil todo por último.
+        if (escopoRegional) {
+          if (escopoRegional.nivel !== 'brasil') {
+            const uf = ufDoAnuncio(item);
+            if (uf && !escopoRegional.estados.includes(uf)) return false;
+          }
+        } else if (geoScopeFilter === 'so_sc') {
+          // FILTRO DE GEOGRAFIA DO TOPO (PONTO 5):
           const st = (item.locationState || '').trim().toUpperCase();
           if (st !== 'SC' && !item.locationCity.toUpperCase().includes('/SC')) {
             return false;
@@ -1637,14 +1643,23 @@ export default function App() {
         // que a ficha usa para conferir o que gravou (`termoCasaNoAnuncio`).
         // Antes eram dois `includes` independentes — e este nem olhava
         // `model`, então uma busca por modelo não encontrava nada.
-        if (searchQuery.trim() && !termoCasaNoAnuncio(searchQuery, item)) return false;
+        if (
+          searchQuery.trim() &&
+          !termoCasaNoAnuncio(searchQuery, item) &&
+          !(idsDoTermo && idsDoTermo.has(item.id))
+        ) {
+          return false;
+        }
         return true;
       })
       .map((item) => ({
         ...item,
         distanceKm: distanciaDaCidade(item.locationCity)
       }));
-  }, [categoryListings, intentFilter, searchQuery, geoScopeFilter, filtrosDaFicha, listingsCombinados]);
+
+    // A ORDEM: região primeiro, vizinhos depois, o resto por último.
+    return ordenarPorProximidade(filtrados, escopoRegional);
+  }, [categoryListings, intentFilter, searchQuery, geoScopeFilter, filtrosDaFicha, listingsCombinados, escopoRegional]);
 
   // Informações do Card Preto "Painel do Vendedor" dinâmicas por categoria
   const activeChipConfig = CATEGORY_CHIPS.find((c) => c.id === selectedCategory) || CATEGORY_CHIPS[0];
@@ -1751,26 +1766,32 @@ export default function App() {
   /* ════════════════════════════════════════════════════════════════════
      A BUSCA DA HOME (Fase 1 — Busca Conversacional)
 
-     A pessoa digita "O que você está procurando hoje?" e confirma com
-     Enter ou na lupa. A partir daí a tela rola até o feed, que já está
-     filtrado.
+     A pessoa escreve na caixa e confirma com Enter ou no botão de
+     enviar. A partir daí a tela rola até o feed, que já está filtrado.
 
-     REGRAS (nenhuma delas é nova: é a busca textual que já existia)
+     REGRAS
 
      1. O termo vai para `searchQuery` — o mesmo estado que a barra do
-        topo usa. A vitrine filtra com `termoCasaNoAnuncio`, a mesma
-        função pura que a ficha do comprador usa.
+        topo usa. A vitrine filtra com o motor conversacional
+        (`anunciosDoTermo`), que é TEXTUAL: a frase inteira, ou os
+        pedaços dela ("Escavadeira 20 toneladas" acha a escavadeira
+        de 20 t). Sem IA, sem endpoint novo.
 
      2. A ficha do comprador (filtrosDaFicha) é DESLIGADA quando uma
         busca nova é digitada: um pedido novo substitui o pedido
         anterior. Sem isso, a busca da pessoa seria ignorada.
 
-     3. A busca NUNCA esconde resultado. Se o termo não casa com nada
-        no escopo que está valendo (categoria + geografia + intenção),
-        o escopo é AMPLIADO — categoria "todas" e geografia "Brasil
-        todo" — em vez de mostrar uma tela vazia sem explicação. Se o
-        termo casa dentro do escopo atual, NADA é tocado: quem escolheu
-        um filtro de propósito continua com ele.
+     3. A REGIÃO DO COMPRADOR MANDA. A busca começa na UF da pessoa
+        (o perfil logado, a procura que ela já registrou, ou o hub
+        do EuQuero). Se a região não tem anúncio suficiente, a busca
+        sobe para os estados VIZINHOS e, se ainda assim não dá, para
+        o BRASIL TODO — sempre avisando a pessoa. A ordem da vitrine
+        acompanha: região primeiro, vizinhos depois, o resto por
+        último.
+
+     4. A busca NUNCA esconde resultado. Se o termo não casa com nada
+        na categoria que está valendo, a categoria abre para todas
+        (em vez de devolver uma tela vazia sem explicação).
      ════════════════════════════════════════════════════════════════════ */
   const handleBuscaPrincipal = (termo: string) => {
     const limpo = (termo ?? '').trim();
@@ -1783,28 +1804,48 @@ export default function App() {
       setIntentFilter('all');
     }
 
-    if (limpo) {
-      const temNoEscopoAtual = listingsCombinados.some(
-        (item) =>
-          itemPassaNoEscopo(item, selectedCategory, geoScopeFilter, intentFilter) &&
-          termoCasaNoAnuncio(limpo, item)
-      );
+    if (!limpo) {
+      // Busca vazia: a pessoa limpou a caixa. O alcance regional
+      // (que era da busca) sai junto.
+      setEscopoRegional(null);
+      setGeoScopeFilter('so_sc');
+      window.requestAnimationFrame(() => {
+        document.getElementById('feed-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
 
-      if (!temNoEscopoAtual) {
-        const temEmTodoOPais = listingsCombinados.some(
-          (item) =>
-            itemPassaNoEscopo(item, 'all', 'brasil_todo', 'all') &&
-            termoCasaNoAnuncio(limpo, item)
-        );
+    // O que a FRASE acha no catálogo inteiro — sem categoria, sem
+    // geografia. É com esse conjunto que a região é contada.
+    const candidatos = anunciosDoTermo(listingsCombinados, limpo);
 
-        // Só amplia se o resultado existe de verdade. Se não existe em
-        // lugar nenhum, a tela vazia é a resposta honesta.
-        if (temEmTodoOPais) {
-          setSelectedCategory('all');
-          setGeoScopeFilter('brasil_todo');
-          setIntentFilter('all');
-        }
-      }
+    // A REGIÃO DA PESSOA: o perfil logado, a procura que ela já
+    // registrou, ou o hub do EuQuero (SC).
+    const ufDoComprador = resolverUfDoComprador({
+      ufDoPerfil: sessao?.state,
+      cidadeDaProcura: compradorSalvo?.cidade,
+    });
+    const cidadeDoComprador = resolverCidadeDoComprador(compradorSalvo?.cidade);
+
+    // A escada: região → vizinhos → Brasil todo.
+    const escopo = decidirEscopoRegional({
+      uf: ufDoComprador,
+      cidade: cidadeDoComprador,
+      anuncios: candidatos,
+    });
+    setEscopoRegional(escopo);
+
+    // A categoria não pode esconder o resultado da busca.
+    const temNaCategoria = candidatos.some((item) => isItemInCategory(item, selectedCategory));
+    if (selectedCategory !== 'all' && !temNaCategoria) {
+      setSelectedCategory('all');
+    }
+
+    // O controle de geografia do topo ("Só SC") é do dono do app. A
+    // busca da Home fala com o alcance REGIONAL da pessoa, então o
+    // controle antigo sai do caminho enquanto o alcance está valendo.
+    if (escopo.nivel === 'brasil') {
+      setGeoScopeFilter('brasil_todo');
     }
 
     // A pessoa pediu uma busca: ela vai para o resultado.
@@ -2090,6 +2131,25 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* AVISO DA EXPANSÃO DA BUSCA (regra de negócio da Tarefa 1.3)
+                A busca começa na região da pessoa. Quando ela sobe um
+                degrau (vizinhos) ou dois (Brasil todo), a vitrine avisa
+                — e o motivo fica visível, não escondido. */}
+            {avisoDoEscopo(escopoRegional) && (
+              <div className="mb-4 flex items-start gap-3 rounded-2xl bg-orange-50 border border-orange-200 px-4 py-3 shadow-2xs">
+                <MapPin className="w-4 h-4 text-[#FF6B00] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm font-black text-orange-950 leading-snug">
+                    {avisoDoEscopo(escopoRegional)}
+                  </p>
+                  <p className="text-[11px] text-orange-800/90 mt-0.5 leading-relaxed">
+                    A busca começa na sua região. Se há poucos anúncios, ela abre para os estados vizinhos
+                    e, por último, para o Brasil todo.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* AVISO INTELIGENTE PARA CIDADE PEQUENA (PONTO 5): ARAQUARI -> JOINVILLE (30KM) */}
             <div className="mb-5 p-3.5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 shadow-xs">
