@@ -347,6 +347,37 @@ const EhPaginaDeRedefinicao = (): boolean => {
   return ehRotaDeRedefinicao(window.location.pathname);
 };
 
+/**
+ * ════════════════════════════════════════════════════════════════════════
+ * O ESCOPO DA VITRINE, EM UM SÓ LUGAR
+ * ════════════════════════════════════════════════════════════════════════
+ *
+ * A vitrine filtra por três coisas ao mesmo tempo: a CATEGORIA, a
+ * INTENÇÃO (à venda / compradores) e a GEOGRAFIA.
+ *
+ * A busca da Home precisa saber se um termo tem resultado DENTRO do
+ * escopo que está valendo — só então ela amplia o escopo, em vez de
+ * devolver uma tela vazia sem explicação (ver `handleBuscaPrincipal`).
+ *
+ * Esta função é a MESMA regra que o `filteredListings` aplica. Ela não
+ * inventa um filtro diferente do filtro: se as duas divergirem, a busca
+ * prometeria um resultado que a tela não mostra.
+ */
+const itemPassaNoEscopo = (
+  item: ListingItem,
+  categoria: string,
+  geo: 'so_sc' | 'brasil_todo' | 'perto_de_mim',
+  intencao: 'all' | 'buy' | 'sell'
+): boolean => {
+  if (categoria && categoria !== 'all' && !isItemInCategory(item, categoria)) return false;
+  if (intencao !== 'all' && item.intent !== intencao) return false;
+  if (geo === 'so_sc') {
+    const st = (item.locationState || '').trim().toUpperCase();
+    if (st !== 'SC' && !item.locationCity.toUpperCase().includes('/SC')) return false;
+  }
+  return true;
+};
+
 export default function App() {
   // Navigation: 'home' (Feed principal), 'chat' (Negociações diretas), 'meus_anuncios' (/meus-anuncios ou /painel-vendedor) ou 'editar_anuncio' (/editar-anuncio)
   const [currentView, setCurrentView] = useState<'home' | 'chat' | 'meus_anuncios' | 'editar_anuncio'>(() => {
@@ -1717,6 +1748,82 @@ export default function App() {
     }));
   };
 
+  /* ════════════════════════════════════════════════════════════════════
+     A BUSCA DA HOME (Fase 1 — Busca Conversacional)
+
+     A pessoa digita "O que você está procurando hoje?" e confirma com
+     Enter ou na lupa. A partir daí a tela rola até o feed, que já está
+     filtrado.
+
+     REGRAS (nenhuma delas é nova: é a busca textual que já existia)
+
+     1. O termo vai para `searchQuery` — o mesmo estado que a barra do
+        topo usa. A vitrine filtra com `termoCasaNoAnuncio`, a mesma
+        função pura que a ficha do comprador usa.
+
+     2. A ficha do comprador (filtrosDaFicha) é DESLIGADA quando uma
+        busca nova é digitada: um pedido novo substitui o pedido
+        anterior. Sem isso, a busca da pessoa seria ignorada.
+
+     3. A busca NUNCA esconde resultado. Se o termo não casa com nada
+        no escopo que está valendo (categoria + geografia + intenção),
+        o escopo é AMPLIADO — categoria "todas" e geografia "Brasil
+        todo" — em vez de mostrar uma tela vazia sem explicação. Se o
+        termo casa dentro do escopo atual, NADA é tocado: quem escolheu
+        um filtro de propósito continua com ele.
+     ════════════════════════════════════════════════════════════════════ */
+  const handleBuscaPrincipal = (termo: string) => {
+    const limpo = (termo ?? '').trim();
+    setSearchQuery(limpo);
+
+    // Um pedido novo desliga a ficha do comprador — e o filtro de
+    // intenção que ela tinha imposto junto (ela nasce em "À Venda").
+    if (filtrosDaFicha) {
+      setFiltrosDaFicha(null);
+      setIntentFilter('all');
+    }
+
+    if (limpo) {
+      const temNoEscopoAtual = listingsCombinados.some(
+        (item) =>
+          itemPassaNoEscopo(item, selectedCategory, geoScopeFilter, intentFilter) &&
+          termoCasaNoAnuncio(limpo, item)
+      );
+
+      if (!temNoEscopoAtual) {
+        const temEmTodoOPais = listingsCombinados.some(
+          (item) =>
+            itemPassaNoEscopo(item, 'all', 'brasil_todo', 'all') &&
+            termoCasaNoAnuncio(limpo, item)
+        );
+
+        // Só amplia se o resultado existe de verdade. Se não existe em
+        // lugar nenhum, a tela vazia é a resposta honesta.
+        if (temEmTodoOPais) {
+          setSelectedCategory('all');
+          setGeoScopeFilter('brasil_todo');
+          setIntentFilter('all');
+        }
+      }
+    }
+
+    // A pessoa pediu uma busca: ela vai para o resultado.
+    window.requestAnimationFrame(() => {
+      document.getElementById('feed-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  /**
+   * Os 4 segmentos da Home aplicam o MESMO filtro do carrossel de
+   * chips — `setSelectedCategory` — e levam a pessoa até o feed.
+   */
+  const handleEscolherCategoria = (categoryId: string) => {
+    setSelectedCategory(categoryId);
+    window.requestAnimationFrame(() => {
+      document.getElementById('feed-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   // A página de redefinição sai antes de qualquer interface. Todos os
   // hooks acima já rodaram — o early-return fica aqui, depois deles, e
   // não antes, para não quebrar a ordem de execução.
@@ -1759,6 +1866,10 @@ export default function App() {
           setSelectedCategory('linha_amarela');
           document.getElementById('feed-container')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }}
+        /* Os dois fluxos que saíram do centro da tela continuam vivos —
+           agora no menu do topo, que é onde uma ação secundária mora. */
+        onOpenComprar={() => handleOpenWizard('buy')}
+        onOpenVender={() => handleOpenWizard('sell')}
       />
 
       {/* NOTIFICATION DRAWER */}
@@ -1802,8 +1913,16 @@ export default function App() {
       {/* MAIN VIEW CONTENT */}
       {currentView === 'home' ? (
         <main className="flex-1 pb-20">
-          {/* 1. OS DOIS BOTÕES GIGANTES: QUERO COMPRAR & QUERO VENDER */}
-          <Hero onOpenWizard={handleOpenWizard} />
+          {/* 1. A ENTRADA DE BUSCA: a pergunta, a caixa grande e os 4 segmentos.
+                 Os dois cartões gigantes "Quero Comprar"/"Quero Vender" saíram
+                 do centro da tela — viraram ações do menu do topo. */}
+          <Hero
+            searchQuery={searchQuery}
+            onSearch={handleBuscaPrincipal}
+            selectedCategory={selectedCategory}
+            onSelectCategory={handleEscolherCategoria}
+            categoryCounts={categoryCounts}
+          />
 
           {/* 2. OS 4 CHIPS DE FILTRO NO TOPO DA LISTA (SEMPRE VISÍVEIS NO TOPO AO ROLAR) */}
           <section className="sticky top-16 z-30 bg-white/95 backdrop-blur-md border-y border-slate-200 shadow-xs py-2 sm:py-2.5">

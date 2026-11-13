@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bell, MessageSquare, Search, Flame, Tag, ChevronDown, LogOut } from 'lucide-react';
+import { Bell, MessageSquare, Search, Flame, Tag, ChevronDown, LogOut, PlusCircle } from 'lucide-react';
 import { ActiveBuyersBanner, ActiveBuyersStats } from './ActiveBuyersBanner';
 
 interface HeaderProps {
@@ -23,6 +23,21 @@ interface HeaderProps {
   activeBuyersStats?: ActiveBuyersStats;
   onSelectBuyersTicker?: () => void;
   onSelectYoutubeTicker?: () => void;
+  /**
+   * "Quero Comprar" — registrar uma procura.
+   *
+   * Antes morava no centro da Home, num cartão gigante. Agora é uma
+   * ação do topo: a Home virou entrada de busca, e cadastrar uma
+   * procura é o que a pessoa faz DEPOIS de ver o que existe.
+   */
+  onOpenComprar?: () => void;
+  /**
+   * "Quero Vender" — anunciar um ativo.
+   *
+   * Mesma história: saiu do centro da tela para o menu do topo, e
+   * continua abrindo exatamente o mesmo cadastro (o WizardModal).
+   */
+  onOpenVender?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +58,8 @@ export const Header: React.FC<HeaderProps> = ({
   activeBuyersStats,
   onSelectBuyersTicker,
   onSelectYoutubeTicker,
+  onOpenComprar,
+  onOpenVender,
 }) => {
   const [isEqMenuOpen, setIsEqMenuOpen] = useState(false);
   const eqMenuRef = useRef<HTMLDivElement>(null);
@@ -86,7 +103,40 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Ações: Pretendentes 🔥, Sino com 2 notificações, Chat, Perfil EQ */}
         <div className="flex items-center gap-2 sm:gap-3">
-          
+
+          {/* QUERO VENDER — em segundo plano, no topo.
+              Saiu do centro da Home (que agora é a entrada de busca) e
+              continua abrindo o mesmo cadastro de anúncio. */}
+          {onOpenVender && (
+            <button
+              type="button"
+              onClick={onOpenVender}
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full bg-[#FF6B00] hover:bg-orange-600 text-white text-xs font-black transition-all cursor-pointer shadow-sm active:scale-95"
+              title="Quero Vender — anunciar meu ativo"
+              aria-label="Quero Vender"
+            >
+              <Tag className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Quero Vender</span>
+            </button>
+          )}
+
+          {/* QUERO COMPRAR — em segundo plano, no topo.
+              No celular fica só o ícone: a largura é curta e o botão do
+              usuário não pode sumir da tela por causa disso. O mesmo
+              atalho continua no menu do usuário (lá embaixo). */}
+          {onOpenComprar && (
+            <button
+              type="button"
+              onClick={onOpenComprar}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black transition-all cursor-pointer active:scale-95"
+              title="Quero Comprar — registrar minha procura"
+              aria-label="Quero Comprar"
+            >
+              <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>Quero Comprar</span>
+            </button>
+          )}
+
           {/* Botão Atalho: Procuras Compatíveis 🔥 */}
           <button
             type="button"
@@ -192,6 +242,37 @@ export const Header: React.FC<HeaderProps> = ({
                         {mensagensRecebidasCount}
                       </span>
                     )}
+                  </button>
+                )}
+
+                {/* QUERO COMPRAR / QUERO VENDER — as duas ações que moravam
+                    no centro da Home. Agora elas são do menu, que é onde
+                    uma ação secundária fica. */}
+                {onOpenComprar && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEqMenuOpen(false);
+                      onOpenComprar();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4 text-emerald-600" />
+                    <span>Quero Comprar</span>
+                  </button>
+                )}
+
+                {onOpenVender && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsEqMenuOpen(false);
+                      onOpenVender();
+                    }}
+                    className="w-full text-left px-3.5 py-2.5 text-xs font-bold text-slate-800 hover:bg-orange-50 hover:text-[#FF6B00] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Tag className="w-4 h-4 text-[#FF6B00]" />
+                    <span>Quero Vender</span>
                   </button>
                 )}
 
