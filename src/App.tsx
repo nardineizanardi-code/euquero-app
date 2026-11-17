@@ -86,6 +86,13 @@ import {
   contarResultadosDaBusca,
   type FiltrosAplicados,
 } from './services/filtrosBusca';
+import {
+  pendenciaDeChat,
+  pendenciaDeWhatsApp,
+  retomarPendenciaDeContato,
+  urlDoWhatsApp,
+  type PendenciaDeContato,
+} from './services/pendenciaContato';
 
 // Base de pretendentes qualificados por categoria (Estilo Tinder / App de Encontro)
 const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
@@ -479,6 +486,13 @@ export default function App() {
   // TASK 2 (FRICÇÃO ZERO): por que a tela de login apareceu. Vazio =
   // login pedido pelo cabeçalho (não é o contato).
   const [motivoDoAuth, setMotivoDoAuth] = useState<string | undefined>(undefined);
+  /**
+   * CHECKPOINT 1 — o que a pessoa pediu ANTES de entrar.
+   *
+   * Fica num ref, e não em estado: é uma anotação para a retomada,
+   * não uma tela. Nada precisa ser renderizado por causa dela.
+   */
+  const pendenciaDeContatoRef = useRef<PendenciaDeContato | null>(null);
 
   /* ══════════════════════════════════════════════════════════════════
      ANÚNCIOS REAIS — o backend
@@ -1572,7 +1586,7 @@ export default function App() {
      ══════════════════════════════════════════════════════════════════ */
   const handleStartChatForItem = (item: ListingItem) => {
     // ─────────────────────────────────────────────────────────────────
-    // TASK 2 (FRICÇÃO ZERO) — O LOGIN É EXIGIDO AQUI, NO CONTATO
+    // TASK 2 (FRICÇÃO ZERO) + CHECKPOINT 1 — O LOGIN É EXIGIDO AQUI
     // ─────────────────────────────────────────────────────────────────
     //
     // A pessoa pode BUSCAR sem login. Mas não pode FALAR com o
@@ -1581,13 +1595,18 @@ export default function App() {
     // aqui — e só aqui.
     //
     // O pedido de login acontece ANTES de qualquer efeito: sem
-    // mensagem no banco, sem match criado, sem chat local. Quando a
-    // pessoa entrar, ela toca de novo no botão e o contato acontece
-    // normalmente.
+    // mensagem no banco, sem match criado, sem chat local.
+    //
+    // CHECKPOINT 1: e a ação que a pessoa pediu fica REGISTRADA.
+    // Antes, ela entrava, o app voltava para a Home e a pessoa tinha
+    // que achar o anúncio de novo e tocar no botão pela segunda
+    // vez. Agora, quando ela entrar, a conversa abre sozinha — com
+    // a máquina CERTA, porque o ID dela foi guardado.
     if (!sessao) {
-      // TASK 2: o login é pedido AQUI, no contato — e a tela explica
-      // que a pessoa já pode ver os anúncios; só precisa se
-      // identificar para falar com o vendedor.
+      const pendencia = pendenciaDeChat(item.id);
+      if (pendencia) {
+        pendenciaDeContatoRef.current = pendencia;
+      }
       setMotivoDoAuth(
         'Você já está vendo os anúncios. Só precisa entrar para falar com o vendedor.'
       );
@@ -1595,6 +1614,46 @@ export default function App() {
       return;
     }
 
+    abrirChatCom(item);
+  };
+
+  /**
+   * CHECKPOINT 1 — o WhatsApp do banner do EloMatch.
+   *
+   * Antes, este botão era um `<a href="https://wa.me/...">`: ele
+   * abria o WhatsApp direto, sem olhar se a pessoa estava logada.
+   * Agora ele passa pela MESMA trava do contato do card — e, se a
+   * pessoa entrar, a ação é retomada.
+   */
+  const handleWhatsAppDoBanner = () => {
+    const telefone = '5547996205669';
+    const texto = 'Olá! Vi a máquina no EuQuero';
+
+    if (!sessao) {
+      const pendencia = pendenciaDeWhatsApp(telefone, texto);
+      if (pendencia) {
+        pendenciaDeContatoRef.current = pendencia;
+      }
+      setMotivoDoAuth(
+        'Você já está vendo os anúncios. Só precisa entrar para falar com o vendedor.'
+      );
+      setAuthAberto(true);
+      return;
+    }
+
+    window.open(urlDoWhatsApp(telefone, texto), '_blank');
+  };
+
+  /**
+   * Abre a conversa com o vendedor de um anúncio.
+   *
+   * É o que `handleStartChatForItem` chama DEPOIS da trava de login.
+   * Fica separado porque a retomada (após o login) precisa chamar
+   * isto direto — na hora da retomada, o estado da sessão ainda é o
+   * velho, e passar pela trava de novo abriria a tela de login
+   * outra vez, num laço.
+   */
+  const abrirChatCom = (item: ListingItem) => {
     const existing = backgroundMatches.find(
       (m) => m.sellerListing.id === item.id || m.buyerDemand.id === item.id
     );
@@ -2384,15 +2443,17 @@ export default function App() {
                   </div>
                 </div>
 
-                <a
-                  href="https://wa.me/5547996205669?text=Ol%C3%A1!%20Vi%20a%20m%C3%A1quina%20no%20EuQuero"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                {/* CHECKPOINT 1: era um <a href="wa.me/..."> — abria o
+                    WhatsApp sem olhar o login. Agora é um botão que
+                    passa pela trava e retoma a ação depois do login. */}
+                <button
+                  type="button"
+                  onClick={handleWhatsAppDoBanner}
                   className="px-4 py-3 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 shrink-0 transition-transform active:scale-95 cursor-pointer text-center"
                 >
                   <MessageSquare className="w-4 h-4 fill-white" />
                   <span>Falar com Vendedor</span>
-                </a>
+                </button>
               </div>
             )}
 
@@ -2687,6 +2748,39 @@ export default function App() {
           setMotivoDoAuth(undefined);
           const entrou = await lerSessaoAtual();
           setSessao(entrou);
+
+          // ─────────────────────────────────────────────────────────────
+          // CHECKPOINT 1 — A RETOMADA
+          // ─────────────────────────────────────────────────────────────
+          //
+          // A pessoa tinha pedido uma coisa antes de entrar: falar com
+          // o vendedor de uma máquina (ou abrir um WhatsApp). Agora que
+          // ela entrou, a gente FAZ.
+          //
+          // O ID da máquina foi guardado, então a conversa abre com o
+          // vendedor CERTO. E se a máquina não existe mais no feed (a
+          // pessoa demorou para confirmar o e-mail e o resultado
+          // mudou), não se abre conversa com o anúncio errado — não se
+          // abre nada.
+          const pendencia = pendenciaDeContatoRef.current;
+          pendenciaDeContatoRef.current = null;
+          if (entrou && pendencia) {
+            const retomada = retomarPendenciaDeContato(pendencia, listingsCombinados);
+            if (retomada?.tipo === 'chat') {
+              const item = listingsCombinados.find((it) => it.id === retomada.id);
+              if (item) abrirChatCom(item);
+            } else if (retomada?.tipo === 'whatsapp') {
+              const url = urlDoWhatsApp(retomada.telefone, retomada.texto);
+              const janela = window.open(url, '_blank');
+              if (!janela) {
+                // O navegador bloqueou a aba. Dizer isso é melhor do
+                // que a pessoa achar que o contato aconteceu.
+                backend.setBackendErro(
+                  'O navegador bloqueou a abertura do WhatsApp. Permita pop-ups para este site e toque de novo.'
+                );
+              }
+            }
+          }
 
           // A guarda grava o destino barrado em `?redirect=`. Sem este
           // passo, a pessoa digitava /meus-anuncios de propósito, era
