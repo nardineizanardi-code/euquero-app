@@ -93,6 +93,12 @@ import {
   urlDoWhatsApp,
   type PendenciaDeContato,
 } from './services/pendenciaContato';
+import {
+  estadoDaVitrineVazia,
+  TEXTO_NENHUM_ANUNCIO,
+  TEXTO_ERRO_AO_CARREGAR,
+  TEXTO_ERRO_AO_CARREGAR_DETALHE,
+} from './services/estadoDaVitrine';
 
 // Base de pretendentes qualificados por categoria (Estilo Tinder / App de Encontro)
 const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
@@ -434,7 +440,17 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_LISTINGS;
+    // CHECKPOINT 2: a vitrine NÃO começa com os dados de demonstração.
+    //
+    // Antes, quando não havia nada no localStorage, o app mostrava o
+    // `INITIAL_LISTINGS` — as peças de vitrine com o "Carlos
+    // Mendes" e companhia. A pessoa via um feed com anúncios que não
+    // existiam, e não tinha como saber que eram falsos.
+    //
+    // A vitrine começa VAZIA. O que ela mostra vem do banco
+    // (`public_listings`), e o estado "vazio" é mostrado como "Nenhum
+    // anúncio" — honesto.
+    return [];
   });
 
 
@@ -1758,6 +1774,19 @@ export default function App() {
   }, [listingsCombinados, selectedCategory]);
 
   // Itens finais para exibição (Categoria + Intenção + Busca + Geografia [📍 Só SC | 🇧🇷 Brasil todo | 📍 Perto de mim])
+  /**
+   * CHECKPOINT 2 — o estado da vitrine vazia.
+   *
+   * "Não tem anúncio" e "não deu para carregar" são coisas diferentes.
+   * A pessoa precisa saber qual das duas aconteceu: quando o Supabase
+   * cai, mostrar "nenhum anúncio" faz ela concluir que o app está
+   * vazio — e ela vai embora.
+   */
+  const estadoVazio = estadoDaVitrineVazia({
+    carregando: backend.carregando,
+    erroLeitura: backend.erroLeitura,
+  });
+
   const filteredListings = useMemo(() => {
     // mini-1.2c: se a pessoa veio da ficha de busca, os filtros que ela
     // escolheu prevalencecem. A categoria da ficha vence a categoria que
@@ -2463,7 +2492,33 @@ export default function App() {
                 {/* mini-1.2c: quando a pessoa veio da ficha, o texto diz
                     o que aconteceu com a busca dela e o que destrava.
                     Sem a ficha, segue a mensagem geral de sempre. */}
-                {filtrosDaFicha ? (
+                {/* CHECKPOINT 2: "não tem anúncio" e "não deu para
+                    carregar" são coisas diferentes. A pessoa precisa
+                    saber qual das duas aconteceu — senão, quando o
+                    Supabase cai, ela conclui que o app está vazio. */}
+                {estadoVazio.tipo === 'carregando' ? (
+                  <p className="font-bold text-slate-800 text-base">
+                    Carregando anúncios…
+                  </p>
+                ) : estadoVazio.tipo === 'erro' ? (
+                  <>
+                    <p className="font-bold text-slate-800 text-base">
+                      {TEXTO_ERRO_AO_CARREGAR}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                      {TEXTO_ERRO_AO_CARREGAR_DETALHE}
+                    </p>
+                    <div className="mt-4 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => backend.recarregar()}
+                        className="px-4 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs cursor-pointer shadow-sm hover:bg-slate-700"
+                      >
+                        Tentar de novo
+                      </button>
+                    </div>
+                  </>
+                ) : filtrosDaFicha ? (
                   <>
                     <p className="font-bold text-slate-800 text-base">
                       {TEXTO_SEM_RESULTADO}
@@ -2524,7 +2579,9 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <p className="font-bold text-slate-800 text-base">Nenhum ativo encontrado nesta categoria.</p>
+                    <p className="font-bold text-slate-800 text-base">
+                      {TEXTO_NENHUM_ANUNCIO}
+                    </p>
                     <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                       Seja o primeiro a publicar sua procura ou colocar seu ativo para vender!
                     </p>

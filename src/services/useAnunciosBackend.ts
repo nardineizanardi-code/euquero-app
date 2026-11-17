@@ -78,6 +78,22 @@ export interface EstadoBackend {
   carregando: boolean;
   /** Houve erro na última operação de escrita. */
   erro: string | null;
+  /**
+   * CHECKPOINT 2 — houve erro na CONSULTA da vitrine?
+   *
+   * É separado do `erro` de propósito. O `erro` é o aviso genérico:
+   * serve para foto que não subiu, gravação que não confirmou,
+   * mensagem que a política barrou. O `erroLeitura` diz uma coisa
+   * só: a consulta dos anúncios falhou.
+   *
+   * A vitrine precisa dessa distinção. "O banco está vazio" e "o
+   * banco caiu" são coisas diferentes para a pessoa: a primeira
+   * quer dizer "não tem anúncio ainda", a segunda quer dizer "não
+   * deu para carregar — tente de novo". Sem a distinção, o app
+   * mostra "nenhum anúncio" quando o Supabase caiu, e a pessoa
+   * conclui que o app está vazio.
+   */
+  erroLeitura: string | null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -198,6 +214,8 @@ export const useAnunciosBackend = (
   const [meus, setMeus] = useState<ListingItem[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  // CHECKPOINT 2: o erro de CONSULTA, separado do aviso genérico.
+  const [erroLeitura, setErroLeitura] = useState<string | null>(null);
   const [configurado, setConfigurado] = useState(false);
 
   /**
@@ -219,6 +237,11 @@ export const useAnunciosBackend = (
     }
 
     setCarregando(true);
+    // CHECKPOINT 2: cada consulta começa limpa. Sem isto, uma falha
+    // antiga continuaria na tela depois de a consulta voltar a
+    // funcionar — e a pessoa veria "Erro ao carregar" com a vitrine
+    // cheia.
+    setErroLeitura(null);
     const uidNoMomento = sessaoRef.current;
 
     try {
@@ -238,7 +261,12 @@ export const useAnunciosBackend = (
     } catch (e) {
       if (sessaoRef.current !== uidNoMomento) return;
       // Falha aqui é FALHA DE LEITURA: o que já estava na tela fica.
-      setErro(e instanceof Error ? e.message : 'não foi possível ler os anúncios');
+      const mensagem =
+        e instanceof Error ? e.message : 'não foi possível ler os anúncios';
+      setErro(mensagem);
+      // CHECKPOINT 2: e a vitrine fica marcada como "deu errado" —
+      // não como "vazia". São coisas diferentes.
+      setErroLeitura(mensagem);
     } finally {
       if (sessaoRef.current === uidNoMomento) setCarregando(false);
     }
@@ -433,6 +461,7 @@ export const useAnunciosBackend = (
     configurado,
     carregando,
     erro,
+    erroLeitura,
     salvar,
     editar,
     excluir,
