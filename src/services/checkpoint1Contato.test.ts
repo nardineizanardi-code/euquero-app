@@ -158,7 +158,11 @@ test('APP: o handler do banner também exige login', () => {
 });
 
 test('APP: depois do login, a ação é retomada sozinha', () => {
-  const bloco = trecho(app, 'onEntrou={async () => {', 'const destino = destinoAposEntrar');
+  const bloco = trecho(
+    app,
+    'CHECKPOINT 1 + 4 — A RETOMADA depois do login.',
+    '}, [sessao]);'
+  );
   assert.match(
     bloco,
     /retomarPendenciaDeContato\(pendencia, listingsCombinados\)/,
@@ -176,11 +180,48 @@ test('APP: a retomada NÃO passa pela trava de novo (não há laço)', () => {
   // Se a retomada chamasse `handleStartChatForItem`, o estado da
   // sessão ainda seria o velho (o `setSessao` não é síncrono) e a
   // tela de login abriria de novo — num laço.
-  const bloco = trecho(app, 'onEntrou={async () => {', 'const destino = destinoAposEntrar');
+  const bloco = trecho(
+    app,
+    'CHECKPOINT 1 + 4 — A RETOMADA depois do login.',
+    '}, [sessao]);'
+  );
   assert.doesNotMatch(
     bloco,
     /handleStartChatForItem\(/,
     'a retomada passa pela trava — a tela de login pode abrir em laço'
+  );
+});
+
+test('APP: a retomada roda DEPOIS que a sessão mudou (sessão nova)', () => {
+  // Este é o ponto do defeito que a Tarefa 4 expôs.
+  //
+  // No `onEntrou`, o `setSessao` ainda não tinha re-renderizado a
+  // tela. As funções chamadas ali enxergavam a sessão ANTIGA — nula.
+  // A conversa abria, mas a mensagem não ia para o banco, porque
+  // `abrirChatCom` só envia quando há sessão.
+  //
+  // A retomada agora mora num effect que depende de `sessao`: ele
+  // roda depois da re-renderização, com a sessão nova.
+  const bloco = trecho(
+    app,
+    'CHECKPOINT 1 + 4 — A RETOMADA depois do login.',
+    'const handleSendMessage'
+  );
+  assert.match(bloco, /useEffect\(\(\) => \{/, 'a retomada não é um effect');
+  assert.match(bloco, /if \(!sessao\) return;/, 'a retomada roda sem sessão');
+  assert.match(bloco, /\}, \[sessao\]\);/, 'a retomada não depende da sessão');
+
+  // E o `onEntrou` NÃO retoma mais nada — ele só troca a sessão.
+  const onEntrou = trecho(app, 'onEntrou={async () => {', 'const destino = destinoAposEntrar');
+  assert.doesNotMatch(
+    onEntrou,
+    /retomarPendenciaDeContato\(/,
+    'o onEntrou ainda retoma com a sessão velha'
+  );
+  assert.doesNotMatch(
+    onEntrou,
+    /abrirChatCom\(/,
+    'o onEntrou ainda abre a conversa com a sessão velha'
   );
 });
 

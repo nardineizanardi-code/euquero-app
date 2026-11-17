@@ -106,6 +106,10 @@ import {
   rotuloDoBotaoRegional,
   termoDoBotaoRegional,
 } from './services/avisoRegional';
+import {
+  demandaDoAviso,
+  buscaJaRegistrada,
+} from './services/aviseMe';
 
 // Base de pretendentes qualificados por categoria (Estilo Tinder / App de Encontro)
 const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
@@ -516,6 +520,34 @@ export default function App() {
    * não uma tela. Nada precisa ser renderizado por causa dela.
    */
   const pendenciaDeContatoRef = useRef<PendenciaDeContato | null>(null);
+  /**
+   * CHECKPOINT 4 — a gravação do "Avise-me" está no ar?
+   *
+   * Barra o segundo toque enquanto o primeiro está em curso. É a
+   * primeira das duas camadas da proteção contra duplicata; a
+   * segunda é a comparação com as demandas que já existem.
+   */
+  const avisoEmCursoRef = useRef(false);
+  /**
+   * CHECKPOINT 4 — o aviso do "Avise-me" para a pessoa.
+   */
+  const [avisoDoAviseMe, setAvisoDoAviseMe] = useState<string | null>(null);
+  /**
+   * CHECKPOINT 4 — a pessoa pediu o aviso ANTES de entrar?
+   *
+   * Sem sessão, o RLS não deixa gravar a demanda. Então o app pede o
+   * login e retoma o aviso depois — em vez de fingir que salvou.
+   */
+  const pendenciaDeAvisoRef = useRef<boolean>(false);
+  /**
+   * CHECKPOINT 4 — o aviso está em curso? (para o botão)
+   *
+   * O ref acima é a TRAVA de verdade: um ref muda na hora, sem
+   * esperar re-renderização, e por isso barra o segundo toque no
+   * mesmo instante. O estado aqui é só para o botão mostrar
+   * "Avissando…" — um ref, sozinho, não redesenha a tela.
+   */
+  const [avisoEmCurso, setAvisoEmCurso] = useState(false);
 
   /* ══════════════════════════════════════════════════════════════════
      ANÚNCIOS REAIS — o backend
@@ -1641,6 +1673,80 @@ export default function App() {
   };
 
   /**
+   * CHECKPOINT 4 — o "Avise-me" do estado vazio.
+   *
+   * A pessoa fez uma busca, não achou nada e tocou em "Avise-me".
+   * Ela quer ser avisada quando chegar uma máquina assim.
+   *
+   * TRÊS COISAS IMPORTANTES
+   *
+   * 1. A gravação passa por `handleCreateBuyerListing`, que respeita o
+   *    RLS: sem sessão, a demanda NÃO é gravada (a política só deixa
+   *    o dono escrever a linha dele). Por isso, sem sessão, o app
+   *    PEDE LOGIN — e retoma o aviso depois que a pessoa entrar.
+   *    Não finge que gravou.
+   *
+   * 2. Duplicata: duas camadas. O ref barra o segundo toque enquanto
+   *    o primeiro está no ar; a comparação com as demandas que já
+   *    existem barra o toque seguinte.
+   *
+   * 3. O que a pessoa vê é a verdade: "avisado" só quando gravou.
+   */
+  const handleAviseMe = async () => {
+    if (!filtrosDaFicha) return;
+
+    // Camada 1: o toque anterior ainda está no ar.
+    if (avisoEmCursoRef.current) return;
+    avisoEmCursoRef.current = true;
+    setAvisoEmCurso(true);
+    setAvisoDoAviseMe(null);
+
+    try {
+      const demanda = demandaDoAviso(filtrosDaFicha);
+
+      // Camada 2: esta busca já está registrada?
+      const jaExiste = buscaJaRegistrada(demanda, [
+        ...listings,
+        ...backend.meus,
+      ]);
+      if (jaExiste) {
+        setAvisoDoAviseMe('Você já está avisado para esta busca.');
+        return;
+      }
+
+      // Sem sessão, o RLS não deixa gravar. O app pede login e
+      // retoma o aviso depois — em vez de fingir que salvou.
+      if (!sessao) {
+        // O RLS não deixa gravar sem dono. O app pede o login e
+        // retoma o aviso depois que a pessoa entrar.
+        pendenciaDeAvisoRef.current = true;
+        setMotivoDoAuth(
+          'Entre com sua conta para a gente te avisar quando chegar uma máquina assim.'
+        );
+        setAuthAberto(true);
+        return;
+      }
+
+      const resultado = await handleCreateBuyerListing(demanda);
+      if (resultado.ok) {
+        setAvisoDoAviseMe(
+          'Pronto! Te avisamos assim que chegar uma máquina com esses critérios.'
+        );
+      } else {
+        setAvisoDoAviseMe(
+          resultado.mensagem ?? 'Não deu para salvar o aviso. Tente de novo.'
+        );
+      }
+    } finally {
+      // O ref é liberado SEMPRE — inclusive quando a gravação
+      // falhou. Sem isto, a segunda tentativa seria tratada como
+      // duplicata e a pessoa ficaria presa.
+      avisoEmCursoRef.current = false;
+      setAvisoEmCurso(false);
+    }
+  };
+
+  /**
    * CHECKPOINT 1 — o WhatsApp do banner do EloMatch.
    *
    * Antes, este botão era um `<a href="https://wa.me/...">`: ele
@@ -1738,6 +1844,63 @@ export default function App() {
         });
     }
   };
+
+  /**
+   * CHECKPOINT 1 + 4 — A RETOMADA depois do login.
+   *
+   * ─────────────────────────────────────────────────────────────────
+   * POR QUE ISTO AQUI E NÃO DENTRO DO `onEntrou`
+   *
+   * No `onEntrou`, o `setSessao` ainda não tinha re-renderizado a
+   * tela. As funções chamadas ali — como `abrirChatCom` — enxergavam a
+   * sessão ANTIGA, que era nula. A conversa abria, mas a mensagem NÃO
+   * ia para o banco: `abrirChatCom` só envia quando há sessão.
+   *
+   * Este effect roda DEPOIS que o estado da sessão mudou, e aí ele vê a
+   * sessão nova. O contato acontece de verdade.
+   *
+   * ─────────────────────────────────────────────────────────────────
+   * O QUE É RETOMADO
+   *
+   *  - CHECKPOINT 1: o contato (conversa ou WhatsApp) que a pessoa
+   *    pediu antes de entrar. O ID da máquina foi guardado, então a
+   *    conversa abre com o vendedor CERTO. E se a máquina não existe
+   *    mais no feed (a pessoa demorou para confirmar o e-mail e o
+   *    resultado mudou), não se abre conversa com o anúncio errado —
+   *    não se abre nada.
+   *
+   *  - CHECKPOINT 4: o "Avise-me" que a pessoa pediu antes de entrar.
+   */
+  useEffect(() => {
+    if (!sessao) return;
+
+    // ── CHECKPOINT 1: o contato ──
+    const pendencia = pendenciaDeContatoRef.current;
+    pendenciaDeContatoRef.current = null;
+    if (pendencia) {
+      const retomada = retomarPendenciaDeContato(pendencia, listingsCombinados);
+      if (retomada?.tipo === 'chat') {
+        const item = listingsCombinados.find((it) => it.id === retomada.id);
+        if (item) abrirChatCom(item);
+      } else if (retomada?.tipo === 'whatsapp') {
+        const url = urlDoWhatsApp(retomada.telefone, retomada.texto);
+        const janela = window.open(url, '_blank');
+        if (!janela) {
+          // O navegador bloqueou a aba. Dizer isso é melhor do que a
+          // pessoa achar que o contato aconteceu.
+          backend.setBackendErro(
+            'O navegador bloqueou a abertura do WhatsApp. Permita pop-ups para este site e toque de novo.'
+          );
+        }
+      }
+    }
+
+    // ── CHECKPOINT 4: o "Avise-me" ──
+    if (pendenciaDeAvisoRef.current) {
+      pendenciaDeAvisoRef.current = false;
+      void handleAviseMe();
+    }
+  }, [sessao]);
 
   const handleSendMessage = (matchId: string, text: string, proposalPrice?: number) => {
     const currentMatch = backgroundMatches.find((m) => m.id === matchId) || activeChatMatch;
@@ -2597,6 +2760,24 @@ export default function App() {
                           {calcularAfrouxamento(filtrosDaFicha)!.rotulo}
                         </button>
                       )}
+                      {/* CHECKPOINT 4 — o "Avise-me".
+                          Antes este botão não existia: a pessoa fazia a
+                          busca, não achava nada, e a procura dela não
+                          ficava registrada em lugar nenhum.
+
+                          Ele grava pelo `handleCreateBuyerListing`, que
+                          respeita o RLS. E não grava duas vezes: o ref
+                          barra o toque enquanto o primeiro está no ar, e
+                          a comparação com as demandas existentes barra
+                          o toque seguinte. */}
+                      <button
+                        type="button"
+                        onClick={handleAviseMe}
+                        disabled={avisoEmCurso}
+                        className="px-4 py-2.5 rounded-xl bg-[#FF6B00] text-white font-bold text-xs cursor-pointer shadow-sm hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {avisoEmCurso ? 'Avissando…' : 'Avise-me quando chegar'}
+                      </button>
                       <button
                         onClick={() => {
                           setFiltrosDaFicha(null);
@@ -2607,6 +2788,11 @@ export default function App() {
                         Ver todas as máquinas
                       </button>
                     </div>
+                    {avisoDoAviseMe && (
+                      <p className="mt-3 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                        {avisoDoAviseMe}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>
@@ -2838,38 +3024,6 @@ export default function App() {
           setSessao(entrou);
 
           // ─────────────────────────────────────────────────────────────
-          // CHECKPOINT 1 — A RETOMADA
-          // ─────────────────────────────────────────────────────────────
-          //
-          // A pessoa tinha pedido uma coisa antes de entrar: falar com
-          // o vendedor de uma máquina (ou abrir um WhatsApp). Agora que
-          // ela entrou, a gente FAZ.
-          //
-          // O ID da máquina foi guardado, então a conversa abre com o
-          // vendedor CERTO. E se a máquina não existe mais no feed (a
-          // pessoa demorou para confirmar o e-mail e o resultado
-          // mudou), não se abre conversa com o anúncio errado — não se
-          // abre nada.
-          const pendencia = pendenciaDeContatoRef.current;
-          pendenciaDeContatoRef.current = null;
-          if (entrou && pendencia) {
-            const retomada = retomarPendenciaDeContato(pendencia, listingsCombinados);
-            if (retomada?.tipo === 'chat') {
-              const item = listingsCombinados.find((it) => it.id === retomada.id);
-              if (item) abrirChatCom(item);
-            } else if (retomada?.tipo === 'whatsapp') {
-              const url = urlDoWhatsApp(retomada.telefone, retomada.texto);
-              const janela = window.open(url, '_blank');
-              if (!janela) {
-                // O navegador bloqueou a aba. Dizer isso é melhor do
-                // que a pessoa achar que o contato aconteceu.
-                backend.setBackendErro(
-                  'O navegador bloqueou a abertura do WhatsApp. Permita pop-ups para este site e toque de novo.'
-                );
-              }
-            }
-          }
-
           // A guarda grava o destino barrado em `?redirect=`. Sem este
           // passo, a pessoa digitava /meus-anuncios de propósito, era
           // mandada para o login, entrava — e voltava para o feed, sem
