@@ -99,6 +99,13 @@ import {
   TEXTO_ERRO_AO_CARREGAR,
   TEXTO_ERRO_AO_CARREGAR_DETALHE,
 } from './services/estadoDaVitrine';
+import {
+  avisoRegionalMostra,
+  tituloDoAvisoRegional,
+  detalheDoAvisoRegional,
+  rotuloDoBotaoRegional,
+  termoDoBotaoRegional,
+} from './services/avisoRegional';
 
 // Base de pretendentes qualificados por categoria (Estilo Tinder / App de Encontro)
 const ALL_PRETENDENTES_DATA: PretendenteLead[] = [
@@ -2371,32 +2378,56 @@ export default function App() {
               </div>
             )}
 
-            {/* AVISO INTELIGENTE PARA CIDADE PEQUENA (PONTO 5): ARAQUARI -> JOINVILLE (30KM) */}
-            <div className="mb-5 p-3.5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 shadow-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#00875A] text-white flex items-center justify-center font-bold text-sm shrink-0">
-                  📍
+            {/* CHECKPOINT 3 — o aviso regional é DINÂMICO.
+                Antes, este texto era chumbado: "Não achamos em
+                Araquari/SC, mas achamos 3 em Joinville/SC (30km de
+                você)". O número, a cidade e a distância eram fixos —
+                e a pessoa via um aviso sobre uma região que não era a
+                dela.
+
+                Agora ele sai do motor: o número é o que a busca
+                achou, a cidade é a da pessoa, e a distância someu
+                (30km de quem?).
+
+                O motor (buscaConversacional.ts) NÃO foi tocado — a
+                formatação do texto mora em avisoRegional.ts, ao lado. */}
+            {avisoRegionalMostra(escopoRegional) && (
+              <div className="mb-5 p-3.5 bg-emerald-50 border-2 border-emerald-400 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950 shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-[#00875A] text-white flex items-center justify-center font-bold text-sm shrink-0">
+                    📍
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-black text-emerald-950">
+                      {tituloDoAvisoRegional(escopoRegional)}
+                    </h4>
+                    <p className="text-[11px] text-emerald-800">
+                      {detalheDoAvisoRegional(escopoRegional)}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs sm:text-sm font-black text-emerald-950">
-                    Não achamos em Araquari/SC, mas achamos 3 em Joinville/SC (30km de você)
-                  </h4>
-                  <p className="text-[11px] text-emerald-800">
-                    Máquinas e equipamentos pesados verificados na região norte de Santa Catarina para vistoria presencial rápida.
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGeoScopeFilter('so_sc');
+                    // Sem cidade, o botão só restringe a geografia:
+                    // escrever a UF como termo transformaria o
+                    // filtro de estado em busca textual, e a pessoa
+                    // perderia o que digitou.
+                    const termo = termoDoBotaoRegional(escopoRegional);
+                    if (termo) setSearchQuery(termo);
+                    window.requestAnimationFrame(() => {
+                      document
+                        .getElementById('feed-container')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    });
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs shrink-0 cursor-pointer transition-all active:scale-95"
+                >
+                  {rotuloDoBotaoRegional(escopoRegional)}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setGeoScopeFilter('so_sc');
-                  setSearchQuery('Joinville');
-                }}
-                className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs shrink-0 cursor-pointer transition-all active:scale-95"
-              >
-                Ver em Joinville (30km) ➔
-              </button>
-            </div>
+            )}
 
             {/* CARD PRETO: PAINEL DO VENDEDOR (APARECE FIXO APENAS NA ABA "À VENDA / VENDER", NUNCA NO FEED TINDER GERAL) */}
             {intentFilter === 'sell' && (
