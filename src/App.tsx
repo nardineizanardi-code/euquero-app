@@ -1850,7 +1850,7 @@ export default function App() {
 
     if (!anuncio) {
       backend.setBackendErro(
-        'Ainda não há um vendedor para essa máquina no EuQuero. Assim que alguém publicar, ela aparece aqui.'
+        'Ainda não há um vendedor para essa máquina. Assim que alguém publicar, ela aparece aqui.'
       );
       return;
     }

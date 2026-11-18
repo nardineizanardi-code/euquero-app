@@ -54,6 +54,9 @@ const anuncio = (over: Partial<ListingItem> = {}): ListingItem =>
   ({
     id: 'sell-1',
     intent: 'sell',
+    // CP1.1: o comparador do banner só aceita ANÚNCIO DE VENDEDOR
+    // ATIVO. O `status` faz parte da regra.
+    status: 'active',
     title: 'Escavadeira CAT 320D 2019',
     category: 'linha_amarela',
     condition: 'usado',

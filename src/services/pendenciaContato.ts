@@ -146,6 +146,21 @@ export const urlDoWhatsApp = (telefone: string, texto: string): string =>
 /** O mínimo que um anúncio precisa ter para ser comparado. */
 export interface AnuncioComparavel {
   id: string;
+  /**
+   * O dono do anúncio: 'sell' é venda, 'buy' é procura.
+   *
+   * ⚠ OBRIGATÓRIO. O banner do comprador fala com o VENDEDOR — e
+   * uma procura de comprador ('buy') não é vendedor nenhum. Sem este
+   * campo, o comparador não pode escolher: ele falha fechado.
+   */
+  intent: string;
+  /**
+   * O estado do anúncio. Só o 'active' é o vendedor que a pessoa
+   * pode falar.
+   *
+   * ⚠ OBRIGATÓRIO, pelo mesmo motivo do `intent`.
+   */
+  status: string;
   title?: string | null;
   brand?: string | null;
   model?: string | null;
@@ -210,6 +225,27 @@ export const anuncioDoPedidoDoComprador = <T extends AnuncioComparavel>(
 
   for (const anuncio of anuncios) {
     if (!anuncio?.id) continue;
+
+    // ─────────────────────────────────────────────────────────────────
+    // ⚠ SÓ O VENDEDOR. NUNCA UMA PROCURA.
+    //
+    // O banner é do COMPRADOR: "encontramos máquinas compatíveis com
+    // o seu pedido". O que ele precisa é do ANÚNCIO DE VENDA — o
+    // vendedor que pode receber a mensagem.
+    //
+    // Antes, o comparador olhava só o texto (título, marca, modelo).
+    // E o texto de uma PROCURA é o mesmo texto do pedido: "Busca
+    // Sinomach SYM 855H" casa com o pedido "Sinomach SYM 855H". O
+    // banner acabava apontando para a própria procura de quem
+    // comprou — o WhatsApp ia para o errado, e o contato não existia.
+    //
+    // A regra agora é dura: `intent === 'sell'` e `status === 'active'`.
+    // Fora disso, o anúncio não é candidato — nem se o texto casar
+    // perfectly.
+    // ─────────────────────────────────────────────────────────────────
+    if (anuncio.intent !== 'sell') continue;
+    if (anuncio.status !== 'active') continue;
+
     const texto = textoDoAnuncio(anuncio);
     if (!texto) continue;
     const doAnuncio = new Set(texto.split(' '));
