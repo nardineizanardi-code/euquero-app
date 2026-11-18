@@ -92,9 +92,11 @@ import {
   retomarPendenciaDeContato,
   urlDoWhatsApp,
   type PendenciaDeContato,
+  anuncioDoPedidoDoComprador,
 } from './services/pendenciaContato';
 import {
   estadoDaVitrineVazia,
+  limparCacheAntigoDaVitrine,
   TEXTO_NENHUM_ANUNCIO,
   TEXTO_ERRO_AO_CARREGAR,
   TEXTO_ERRO_AO_CARREGAR_DETALHE,
@@ -434,23 +436,19 @@ export default function App() {
 
   // Listings state with LocalStorage e versionamento limpo
   const [listings, setListings] = useState<ListingItem[]>(() => {
-    try {
-      const savedV8 = localStorage.getItem('euquero_listings_v8');
-      if (savedV8) {
-        const parsed: ListingItem[] = JSON.parse(savedV8);
-        if (parsed.length > 0) {
-          // Sanitize any lingering fechadura lock image to the yellow Caterpillar 320D 2019 excavator
-          return parsed.map((item) => ({
-            ...item,
-            images: (item.images || []).map((img) =>
-              img.includes('photo-1578328819058-b69f3a3b0f6b') ? '/cat_320d_excavator.jpg' : img
-            )
-          }));
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    // ⚠ CORREÇÃO DO ZAPIA — O CACHE ANTIGO SAI FORA
+    //
+    // Tirar a injeção do `INITIAL_LISTINGS` não bastou: o
+    // `localStorage` guardava a vitrine inteira, e as peças de
+    // demonstração já estavam salvas ali dentro, com o "Carlos
+    // Mendes" e companhia. Quem abria o app num navegador que já
+    // tinha usado o app antes via um feed com anúncios que não
+    // existiam no banco.
+    //
+    // A limpeza é FORÇADA: o cache é apagado aqui, no carregamento,
+    // e a vitrine recomeça vazia — com o que o banco trouxer.
+    limparCacheAntigoDaVitrine();
+
     // CHECKPOINT 2: a vitrine NÃO começa com os dados de demonstração.
     //
     // Antes, quando não havia nada no localStorage, o app mostrava o
@@ -1657,8 +1655,24 @@ export default function App() {
     // que achar o anúncio de novo e tocar no botão pela segunda
     // vez. Agora, quando ela entrar, a conversa abre sozinha — com
     // a máquina CERTA, porque o ID dela foi guardado.
+    //
+    // ─────────────────────────────────────────────────────────────────
+    // ⚠ CORREÇÃO DO ZAPIA — A DIREÇÃO IMPORTA
+    //
+    // O COMPRADOR falando com o VENDEDOR (`item.intent === 'sell'`)
+    // vai para o WhatsApp daquele vendedor, com o telefone real do
+    // banco. É o que o botão "Falar com Vendedor" promete.
+    //
+    // O VENDEDOR falando com o COMPRADOR (`item.intent === 'buy'`)
+    // continua no chat do app. O telefone do comprador é PRIVADO — e
+    // isso não muda. As notificações e os pretendentes usam este
+    // caminho, e nenhum deles é para virar uma ida ao WhatsApp.
+    // ─────────────────────────────────────────────────────────────────
     if (!sessao) {
-      const pendencia = pendenciaDeChat(item.id);
+      const pendencia =
+        item.intent === 'sell'
+          ? pendenciaDeWhatsApp(item.id, textoDoContato(item))
+          : pendenciaDeChat(item.id);
       if (pendencia) {
         pendenciaDeContatoRef.current = pendencia;
       }
@@ -1669,8 +1683,18 @@ export default function App() {
       return;
     }
 
+    if (item.intent === 'sell') {
+      // O comprador fala com o vendedor: WhatsApp do vendedor real.
+      void abrirWhatsAppDoAnuncio(item, textoDoContato(item));
+      return;
+    }
+
     abrirChatCom(item);
   };
+
+  /** A mensagem que o app manda ao vendedor quando alguém se interessa. */
+  const textoDoContato = (item: ListingItem): string =>
+    `Ola! Tenho interesse no anuncio "${item.title}". Podemos conversar?`;
 
   /**
    * CHECKPOINT 4 — o "Avise-me" do estado vazio.
@@ -1747,19 +1771,96 @@ export default function App() {
   };
 
   /**
+   * Abre o WhatsApp do vendedor de um anúncio, na MESMA ABA.
+   *
+   * ─────────────────────────────────────────────────────────────────
+   * ⚠ CORREÇÃO DO ZAPIA — O BLOQUEADOR DE POP-UP
+   *
+   * Antes, isto era `window.open(url, '_blank')`, dentro do effect
+   * que retoma a ação depois do login. Duas coisas ruins:
+   *
+   *  - o navegador bloqueia a aba nova. A pessoa ficava sem WhatsApp
+   *    nenhum — e sem aviso, porque o `null` do `window.open` era
+   *    engolido;
+   *  - a URL era montada longe de um clique de verdade. Um effect não
+   *    é um gesto do usuário: para o navegador, não é.
+   *
+   * Agora é `window.location.href`: o navegador navega na mesma aba, e
+   * o bloqueador de pop-up não tem o que bloquear.
+   *
+   * E o telefone é o REAL, lido do banco. Se o banco não disser, o
+   * app avisa e oferece o chat do app — que funciona sem telefone.
+   * ─────────────────────────────────────────────────────────────────
+   */
+  const abrirWhatsAppDoAnuncio = async (anuncio: ListingItem, texto: string) => {
+    // 1. O telefone REAL, lido do banco. Se o banco não disser, não há
+    //    número — e o app não inventa um.
+    const telefone = await backend.telefoneDoVendedor(anuncio.id);
+
+    if (!telefone) {
+      // A reserva é o chat do app: ele funciona sem telefone, e é ele
+      // que registra o contato no banco.
+      backend.setBackendErro(
+        'Este vendedor não deixou telefone no anúncio. Fale com ele pelo chat do app.'
+      );
+      abrirChatCom(anuncio);
+      return;
+    }
+
+    // 2. A mensagem no banco é o REGISTRO do contato: é o que o
+    //    vendedor vê em "Mensagens Recebidas" e o que alimenta o
+    //    painel de procuras dele. A navegação ESPERA ela terminar —
+    //    senão a ida para o WhatsApp cancelaria o envio.
+    if (sessao && backend.configurado && anuncio.intent === 'sell') {
+      try {
+        await backend.contatar(anuncio, texto);
+      } catch (e) {
+        // O registro no banco falhou, mas o WhatsApp é o caminho que a
+        // pessoa pediu. O aviso do backend mostra o que deu errado.
+      }
+    }
+
+    // 3. A navegação, na MESMA ABA.
+    window.location.href = urlDoWhatsApp(telefone, texto);
+  };
+
+  /**
    * CHECKPOINT 1 — o WhatsApp do banner do EloMatch.
    *
-   * Antes, este botão era um `<a href="https://wa.me/...">`: ele
-   * abria o WhatsApp direto, sem olhar se a pessoa estava logada.
-   * Agora ele passa pela MESMA trava do contato do card — e, se a
-   * pessoa entrar, a ação é retomada.
+   * ─────────────────────────────────────────────────────────────────
+   * ⚠ CORREÇÃO DO ZAPIA — O TELEFONE NÃO É MAIS UMA CONSTANTE
+   *
+   * Este botão era um `<a href="https://wa.me/5547996205669">`: um
+   * número FIXO, o mesmo para todo mundo e para todo anúncio, e não
+   * o do vendedor que a pessoa está procurando.
+   *
+   * Agora ele aponta para o ANÚNCIO que atende o pedido do comprador
+   * (o banner é o banner do COMPRADOR: "encontramos máquinas
+   * compatíveis com o seu pedido de X"). E o telefone é lido do
+   * BANCO depois do login — o real daquele vendedor.
+   *
+   * Se nenhum anúncio atender ao pedido, o app DIZ que ainda não há
+   * vendedor para aquela máquina. Não abre o WhatsApp de alguém que
+   * não tem nada a ver com o pedido.
+   * ─────────────────────────────────────────────────────────────────
    */
   const handleWhatsAppDoBanner = () => {
-    const telefone = '5547996205669';
-    const texto = 'Olá! Vi a máquina no EuQuero';
+    const maquina = compradorSalvo?.maquina ?? '';
+    const anuncio = anuncioDoPedidoDoComprador(listingsCombinados, maquina);
+
+    if (!anuncio) {
+      backend.setBackendErro(
+        'Ainda não há um vendedor para essa máquina no EuQuero. Assim que alguém publicar, ela aparece aqui.'
+      );
+      return;
+    }
+
+    const texto = `Olá! Vi o anúncio "${anuncio.title}" no EuQuero. Gostaria de mais informações.`;
 
     if (!sessao) {
-      const pendencia = pendenciaDeWhatsApp(telefone, texto);
+      // O que fica pendente é o ANÚNCIO — o telefone é lido do banco
+      // depois do login, e é o real daquele vendedor.
+      const pendencia = pendenciaDeWhatsApp(anuncio.id, texto);
       if (pendencia) {
         pendenciaDeContatoRef.current = pendencia;
       }
@@ -1770,7 +1871,7 @@ export default function App() {
       return;
     }
 
-    window.open(urlDoWhatsApp(telefone, texto), '_blank');
+    void abrirWhatsAppDoAnuncio(anuncio, texto);
   };
 
   /**
@@ -1883,14 +1984,12 @@ export default function App() {
         const item = listingsCombinados.find((it) => it.id === retomada.id);
         if (item) abrirChatCom(item);
       } else if (retomada?.tipo === 'whatsapp') {
-        const url = urlDoWhatsApp(retomada.telefone, retomada.texto);
-        const janela = window.open(url, '_blank');
-        if (!janela) {
-          // O navegador bloqueou a aba. Dizer isso é melhor do que a
-          // pessoa achar que o contato aconteceu.
-          backend.setBackendErro(
-            'O navegador bloqueou a abertura do WhatsApp. Permita pop-ups para este site e toque de novo.'
-          );
+        // O telefone é lido do BANCO agora — e é o real daquele
+        // vendedor. A navegação é na mesma aba: `window.location.href`
+        // não tem o que o bloqueador de pop-up possa barrar.
+        const item = listingsCombinados.find((it) => it.id === retomada.id);
+        if (item) {
+          void abrirWhatsAppDoAnuncio(item, retomada.texto);
         }
       }
     }

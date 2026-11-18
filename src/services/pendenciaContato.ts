@@ -23,8 +23,19 @@
  * São dois tipos de ação:
  *
  *  - 'chat':     abrir a conversa com o vendedor da máquina X.
- *  - 'whatsapp': abrir o WhatsApp de um número (o banner do
- *                EloMatch, que fala com a plataforma).
+ *  - 'whatsapp': abrir o WhatsApp do vendedor do anúncio X.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ * ⚠ CORREÇÃO DO ZAPIA — O TELEFONE NÃO VIAJA NA PENDÊNCIA
+ *
+ * A pendência do WhatsApp carregava o NÚMERO, tirado no momento do
+ * clique. No banner do EloMatch esse número era FIXO — o mesmo para
+ * todo mundo, para todo anúncio, e não era o do vendedor daquele
+ * anúncio.
+ *
+ * Agora a pendência carrega o **ID do anúncio**, e o telefone é lido
+ * do BANCO depois do login — o número real daquele vendedor. Se o
+ * telefone não vier, o app diz que não veio. Ele não inventa um.
  *
  * ─────────────────────────────────────────────────────────────────────
  * POR QUE UMA FUNÇÃO PURA
@@ -41,7 +52,7 @@
 /** O que a pessoa pediu, enquanto cria a conta. */
 export type PendenciaDeContato =
   | { tipo: 'chat'; id: string }
-  | { tipo: 'whatsapp'; telefone: string; texto: string };
+  | { tipo: 'whatsapp'; id: string; texto: string };
 
 /**
  * A ação de abrir a conversa com o vendedor da máquina `id`.
@@ -56,18 +67,21 @@ export const pendenciaDeChat = (id: string | null | undefined): PendenciaDeConta
 };
 
 /**
- * A ação de abrir o WhatsApp de um número.
+ * A ação de abrir o WhatsApp do VENDEDOR do anúncio `id`.
  *
- * O telefone vem SEM o `55` e sem máscara — quem monta a URL é o
- * chamador. Aqui é só a intenção.
+ * O ID é o do ANÚNCIO — não o do telefone. O número é lido do banco
+ * depois do login, e é o real daquele vendedor.
+ *
+ * Devolve `null` quando não há id: sem anúncio não há vendedor, e
+ * pendurar uma ação impossível seria pior do que não pedir login.
  */
 export const pendenciaDeWhatsApp = (
-  telefone: string | null | undefined,
+  id: string | null | undefined,
   texto: string
 ): PendenciaDeContato | null => {
-  const limpo = (telefone ?? '').replace(/\D/g, '');
+  const limpo = (id ?? '').trim();
   if (!limpo) return null;
-  return { tipo: 'whatsapp', telefone: limpo, texto };
+  return { tipo: 'whatsapp', id: limpo, texto };
 };
 
 /** A ação retomada — a mesma forma da pendência. */
@@ -81,7 +95,11 @@ export type RetomadaDeContato = PendenciaDeContato;
  *
  * Devolve `null` quando não há o que retomar:
  *  - não havia pendência;
- *  - a pendência era de chat e a máquina não está mais na lista.
+ *  - o anúncio não está mais na lista.
+ *
+ * A pendência do WhatsApp também exige que o anúncio exista: o
+ * telefone vem do anúncio, e um anúncio que saiu do resultado não é
+ * mais um vendedor para quem falar.
  */
 export const retomarPendenciaDeContato = (
   pendencia: PendenciaDeContato | null,
@@ -89,14 +107,9 @@ export const retomarPendenciaDeContato = (
 ): RetomadaDeContato | null => {
   if (!pendencia) return null;
 
-  if (pendencia.tipo === 'whatsapp') {
-    // O número não depende da lista: ele continua válido.
-    return pendencia;
-  }
-
-  // A máquina precisa EXISTIR agora. Se saiu do feed enquanto a
+  // O anúncio precisa EXISTIR agora. Se saiu do feed enquanto a
   // pessoa criava a conta, não há conversa para abrir — e abrir a
-  //errada seria pior do que não abrir nenhuma.
+  // errada seria pior do que não abrir nenhuma.
   const existe = itens.some((it) => it.id === pendencia.id);
   if (!existe) return null;
 
@@ -111,3 +124,99 @@ export const retomarPendenciaDeContato = (
  */
 export const urlDoWhatsApp = (telefone: string, texto: string): string =>
   `https://wa.me/55${telefone.replace(/\D/g, '')}?text=${encodeURIComponent(texto)}`;
+
+/* ═══════════════════════════════════════════════════════════════════
+   QUAL ANÚNCIO É O "VENDEDOR" DE QUEM TOCOU NO BANNER
+
+   O banner do EloMatch é o do COMPRADOR: ele diz "encontramos
+   máquinas compatíveis com o seu pedido de X". O botão "Falar com
+   Vendedor" dele precisa apontar para o anúncio que atende aquele
+   pedido — senão ele fala com alguém que não é o vendedor da máquina
+   que a pessoa procura.
+
+   A regra aqui é de texto: o pedido ("Escavadeira CAT 320D") precisa
+   caber dentro do anúncio (título, marca, modelo, tipo). Todas as
+   palavras importantes do pedido têm de estar no anúncio.
+
+   Devolve `null` quando nenhum anúncio atende — e aí o app diz
+   "ainda não há vendedor para essa máquina", em vez de abrir o
+   WhatsApp de alguém que não tem nada a ver com o pedido.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/** O mínimo que um anúncio precisa ter para ser comparado. */
+export interface AnuncioComparavel {
+  id: string;
+  title?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  subcategoryType?: string | null;
+}
+
+/** Palavras que não distinguem uma máquina de outra. */
+const PALAVRAS_VAZIAS = new Set([
+  'de',
+  'da',
+  'do',
+  'das',
+  'dos',
+  'para',
+  'com',
+  'uma',
+  'um',
+  'e',
+  'a',
+  'o',
+  'em',
+  'no',
+  'na',
+  'por',
+]);
+
+/** Texto sem acento, sem caixa e sem pontuação sobrando. */
+const normalizar = (texto: string): string =>
+  texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/** As palavras que identificam a máquina no pedido. */
+const palavrasDaMaquina = (maquina: string): string[] =>
+  normalizar(maquina)
+    .split(' ')
+    .filter((p) => p.length >= 2 && !PALAVRAS_VAZIAS.has(p));
+
+/** O texto do anúncio onde a máquina é procurada. */
+const textoDoAnuncio = (anuncio: AnuncioComparavel): string =>
+  normalizar(
+    [anuncio.title, anuncio.brand, anuncio.model, anuncio.subcategoryType]
+      .filter(Boolean)
+      .join(' ')
+  );
+
+/**
+ * O anúncio que atende ao pedido do comprador.
+ *
+ * @param anuncios os anúncios do feed (na ordem em que aparecem)
+ * @param maquina  o que a pessoa pediu ("Escavadeira CAT 320D")
+ */
+export const anuncioDoPedidoDoComprador = <T extends AnuncioComparavel>(
+  anuncios: readonly T[],
+  maquina: string | null | undefined
+): T | null => {
+  const palavras = palavrasDaMaquina(maquina ?? '');
+  if (!palavras.length) return null;
+
+  for (const anuncio of anuncios) {
+    if (!anuncio?.id) continue;
+    const texto = textoDoAnuncio(anuncio);
+    if (!texto) continue;
+    const doAnuncio = new Set(texto.split(' '));
+    // TODAS as palavras importantes do pedido precisam estar no
+    // anúncio. Uma sóbatida seria "qualquer anúncio com CAT".
+    if (palavras.every((p) => doAnuncio.has(p))) return anuncio;
+  }
+
+  return null;
+};

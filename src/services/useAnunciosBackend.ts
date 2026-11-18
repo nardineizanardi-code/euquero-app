@@ -59,7 +59,11 @@ import {
 import type { SupabaseLike } from './listingRepository.ts';
 import { enviarFotos } from './fotos.ts';
 import { INITIAL_LISTINGS } from '../data/initialData.ts';
-import { contatarVendedor, listarMensagensDoDono } from './contato.ts';
+import {
+  contatarVendedor,
+  listarMensagensDoDono,
+  telefoneDoVendedor as telefoneDoVendedorNoBanco,
+} from './contato.ts';
 import type { MensagemContato } from './contato.ts';
 
 /** De onde veio o anúncio que está na tela. */
@@ -199,6 +203,13 @@ export interface ResultadoAnunciosBackend extends EstadoBackend {
     anuncio: ListingItem,
     texto: string
   ) => Promise<{ matchId: string; mensagemId: string }>;
+  /**
+   * O telefone REAL do vendedor de um anúncio.
+   *
+   * Vem do banco (`listings.user_phone`). Devolve `null` quando o
+   * banco não disse — e o app não inventa número nesse caso.
+   */
+  telefoneDoVendedor: (listingId: string) => Promise<string | null>;
   /** As mensagens que chegaram para os anúncios do dono. */
   mensagensRecebidas: () => Promise<Array<MensagemContato & { listingId: string }>>;
   /** As mensagens de uma conversa específica. */
@@ -436,6 +447,19 @@ export const useAnunciosBackend = (
     setErro(mensagem);
   }, []);
 
+  const telefoneDoVendedor = useCallback(
+    async (listingId: string): Promise<string | null> => {
+      const cli = cliente();
+      if (!cli || !sessao) return null;
+      try {
+        return await telefoneDoVendedorNoBanco(cli, listingId);
+      } catch (e) {
+        return null;
+      }
+    },
+    [sessao]
+  );
+
   const mensagensRecebidas = useCallback(async (): Promise<
     Array<MensagemContato & { listingId: string }>
   > => {
@@ -468,6 +492,7 @@ export const useAnunciosBackend = (
     recarregar,
     ehMeu,
     contatar,
+    telefoneDoVendedor,
     mensagensRecebidas,
     carregarMensagens,
     setBackendErro,

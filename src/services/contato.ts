@@ -62,6 +62,97 @@ import type { SupabaseLike } from './listingRepository.ts';
 import { SupabaseError } from './listingRepository.ts';
 
 /* ═══════════════════════════════════════════════════════════════════════
+   O TELEFONE REAL DO VENDEDOR
+
+   CORREÇÃO DO ZAPIA: o WhatsApp tem que ir para o vendedor DAQUELE
+   anúncio, com o número REAL — o que está no banco, não uma
+   constante no código.
+
+   O número do vendedor mora em `listings.user_phone`: é o que o
+   vendedor escreveu no cadastro (`user_metadata.phone`), e o
+   gatilho do banco copia o mesmo número para `profiles.phone`.
+
+   A `public_listings` NÃO expõe essa coluna — e não deve: a vitrine
+   é pública, e telefone é dado pessoal. Por isso a leitura aqui é
+   feita na tabela `listings`, que é coberta pela RLS.
+
+   DOIS CAMINHOS, NESTA ORDEM
+
+   1. A leitura direta do anúncio (`listings` pelo id).
+   2. O mesmo anúncio, alcançado pelo MATCH do comprador
+      (`matches` → `listings!matches_listing_id_fkey(user_phone)`).
+
+   O segundo existe porque o caminho 1 depende da RLS de `listings`
+   liberar a leitura do anúncio de outro dono. Se ela não liberar, o
+   caminho 2 pode liberar — é o mesmo dado, visto por outra porta.
+
+   Se NENHUM dos dois responder com um telefone, a função devolve
+   `null`. O app não inventa número e não cai no telefone de outra
+   pessoa: ele avisa que o contato é pelo chat do app.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/** Só dígitos, para a URL do WhatsApp. */
+const digitosDoTelefone = (telefone: unknown): string =>
+  String(telefone ?? '').replace(/\D/g, '');
+
+/**
+ * O telefone real do vendedor de um anúncio.
+ *
+ * @param listingId o anúncio cujo vendedor estamos procurando
+ * @returns o número só com dígitos, ou `null` se o banco não disse.
+ */
+export const telefoneDoVendedor = async (
+  client: SupabaseLike,
+  listingId: string
+): Promise<string | null> => {
+  if (!listingId) return null;
+
+  // ── Caminho 1: o anúncio, direto ──
+  try {
+    const { data, error } = await client
+      .from('listings')
+      .select('id,user_phone')
+      .eq('id', listingId)
+      .maybeSingle();
+
+    if (!error) {
+      const telefone = digitosDoTelefone(
+        (data as { user_phone?: string | null } | null)?.user_phone
+      );
+      if (telefone) return telefone;
+    }
+  } catch (e) {
+    // A RLS pode barrar com 401/42501. Não é motivo para o app
+    // quebrar: o caminho 2 tenta a mesma coisa por outra porta.
+  }
+
+  // ── Caminho 2: o anúncio, pelo match do comprador ──
+  try {
+    const { data, error } = await client
+      .from('matches')
+      .select('id,listing_id,listings!matches_listing_id_fkey(user_phone)')
+      .eq('listing_id', listingId);
+
+    if (!error) {
+      const linhas = (data ?? []) as Array<{
+        listings?: { user_phone?: string | null } | Array<{ user_phone?: string | null }>;
+      }>;
+      for (const linha of linhas) {
+        const embutido = Array.isArray(linha.listings)
+          ? linha.listings[0]
+          : linha.listings;
+        const telefone = digitosDoTelefone(embutido?.user_phone);
+        if (telefone) return telefone;
+      }
+    }
+  } catch (e) {
+    // Idem: sem telefone é resposta, não erro.
+  }
+
+  return null;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
    MENSAGENS
    ═══════════════════════════════════════════════════════════════════════ */
 

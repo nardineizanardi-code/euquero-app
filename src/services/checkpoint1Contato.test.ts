@@ -57,17 +57,21 @@ test('PENDÊNCIA: o ID em branco NÃO vira pendência', () => {
   assert.equal(pendenciaDeChat(undefined), null);
 });
 
-test('PENDÊNCIA: o WhatsApp guarda o telefone só com dígitos', () => {
-  const p = pendenciaDeWhatsApp('(47) 99620-5669', 'Olá!');
+test('PENDÊNCIA: o WhatsApp guarda o ANÚNCIO, não o telefone', () => {
+  // CORREÇÃO DO ZAPIA: o telefone é lido do banco depois do login.
+  // Guardar o número no clique era guardar uma constante — e, no
+  // banner, era o número fixo de sempre.
+  const p = pendenciaDeWhatsApp('sell-42', 'Olá!');
   assert.ok(p);
   assert.equal(p.tipo, 'whatsapp');
-  assert.equal(p.telefone, '47996205669');
+  assert.equal(p.id, 'sell-42');
   assert.equal(p.texto, 'Olá!');
 });
 
-test('PENDÊNCIA: WhatsApp sem telefone NÃO vira pendência', () => {
+test('PENDÊNCIA: WhatsApp sem anúncio NÃO vira pendência', () => {
   assert.equal(pendenciaDeWhatsApp('', 'Olá'), null);
   assert.equal(pendenciaDeWhatsApp(null, 'Olá'), null);
+  assert.equal(pendenciaDeWhatsApp('   ', 'Olá'), null);
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -95,14 +99,24 @@ test('RETOMADA: sem pendência, não há o que retomar', () => {
   assert.equal(retomarPendenciaDeContato(null, feed), null);
 });
 
-test('RETOMADA: o WhatsApp é retomado mesmo sem a lista', () => {
-  // O número não depende do feed: ele continua válido.
+test('RETOMADA: o WhatsApp do anúncio que existe é retomado', () => {
   const r = retomarPendenciaDeContato(
-    { tipo: 'whatsapp', telefone: '47996205669', texto: 'Olá!' },
-    []
+    { tipo: 'whatsapp', id: 'sell-1', texto: 'Olá!' },
+    feed
   );
   assert.ok(r);
   assert.equal(r.tipo, 'whatsapp');
+  assert.equal(r.id, 'sell-1');
+});
+
+test('RETOMADA: o WhatsApp de um anúncio que SAIU do feed NÃO é retomado', () => {
+  // O telefone vem do anúncio. Um anúncio que não está mais no feed
+  // não é mais um vendedor para quem falar.
+  const r = retomarPendenciaDeContato(
+    { tipo: 'whatsapp', id: 'sell-99', texto: 'Olá!' },
+    feed
+  );
+  assert.equal(r, null);
 });
 
 test('URL: o WhatsApp sai com o 55 e o texto codificado', () => {
